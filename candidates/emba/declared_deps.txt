@@ -1,0 +1,2 @@
+# Declared dependencies for emba
+# Copy from the tool's own documentation or README.

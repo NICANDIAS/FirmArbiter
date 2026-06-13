@@ -1,0 +1,6 @@
+# Your pipeline declared dependencies
+# Fill this in based on your own pipeline's requirements.txt or setup documentation.
+# This file exists so VERITAS evaluates your pipeline with the same
+# documentation-quality check it applies to FirmAE, FIRMADYNE, and EMBA.
+
+# --- Fill in as you finalise your pipeline's requirements ---

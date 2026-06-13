@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VERITAS run result",
+  "description": "One result record produced by running a single candidate tool against a single firmware image",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "case_id",
+    "tool",
+    "tool_version",
+    "run_id",
+    "run_timestamp_utc",
+    "architecture",
+    "firmware_sha256",
+    "unpack",
+    "boot",
+    "service",
+    "stability",
+    "cleanup",
+    "logs"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Version of this schema, incremented when fields change",
+      "const": "1.0"
+    },
+    "case_id": {
+      "type": "string",
+      "description": "Corpus case identifier, matches corpus_manifest.jsonl"
+    },
+    "tool": {
+      "type": "string",
+      "enum": ["firmadyne", "firmae", "emba", "your_pipeline"],
+      "description": "Which candidate tool was evaluated"
+    },
+    "tool_version": {
+      "type": "string",
+      "description": "Git commit hash or version string of the tool at time of run"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Unique identifier for this run, format: YYYYMMDD_HHMMSSz__tool__short_hash"
+    },
+    "run_timestamp_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when the run started"
+    },
+    "architecture": {
+      "type": "string",
+      "description": "Architecture passed to the tool, e.g. arm, mips, x86"
+    },
+    "firmware_sha256": {
+      "type": "string",
+      "description": "SHA256 of the firmware image, for cross-referencing with corpus manifest"
+    },
+
+    "unpack": {
+      "type": "object",
+      "description": "Independent extraction baseline measured by VERITAS before the tool runs",
+      "required": ["veritas_rootfs_found", "veritas_fs_types", "veritas_elf_count", "tool_claimed_unpack"],
+      "properties": {
+        "veritas_rootfs_found": {
+          "type": "boolean",
+          "description": "Whether VERITAS independently found a root filesystem using Binwalk"
+        },
+        "veritas_fs_types": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Filesystem types VERITAS detected, e.g. [squashfs, jffs2]"
+        },
+        "veritas_elf_count": {
+          "type": "integer",
+          "description": "Number of ELF binaries found in the extracted filesystem"
+        },
+        "tool_claimed_unpack": {
+          "type": ["boolean", "null"],
+          "description": "Whether the tool reported successful extraction in its output. Null if the tool does not report this."
+        }
+      }
+    },
+
+    "boot": {
+      "type": "object",
+      "description": "Boot outcome measured by monitoring the tool process",
+      "required": ["success", "wall_time_seconds", "cpu_seconds", "peak_ram_mb", "timeout_seconds", "timed_out"],
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "True if the tool reported a stable running state before timeout"
+        },
+        "wall_time_seconds": {
+          "type": ["number", "null"],
+          "description": "Total elapsed time from tool start to boot signal or timeout"
+        },
+        "cpu_seconds": {
+          "type": ["number", "null"],
+          "description": "Cumulative CPU time consumed across all child processes"
+        },
+        "peak_ram_mb": {
+          "type": ["number", "null"],
+          "description": "Peak RSS memory in megabytes across all child processes"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "description": "The timeout budget used for this run"
+        },
+        "timed_out": {
+          "type": "boolean",
+          "description": "True if the run hit the timeout without producing a boot signal"
+        },
+        "failure_reason": {
+          "type": ["string", "null"],
+          "description": "Brief reason if boot failed, e.g. kernel_panic, nvram_missing, extraction_failed"
+        }
+      }
+    },
+
+    "service": {
+      "type": "object",
+      "description": "Network service probe results measured independently by VERITAS",
+      "required": ["reported_ip", "reported_port", "tcp_connect", "http_status", "service_reachable", "service_authentic"],
+      "properties": {
+        "reported_ip": {
+          "type": ["string", "null"],
+          "description": "IP address the tool reported as the firmware network address"
+        },
+        "reported_port": {
+          "type": ["integer", "null"],
+          "description": "Port the tool reported as the service port"
+        },
+        "tcp_connect": {
+          "type": ["boolean", "null"],
+          "description": "Whether a TCP connection succeeded to the reported IP and port"
+        },
+        "http_status": {
+          "type": ["integer", "null"],
+          "description": "HTTP status code returned, or null if TCP connect failed"
+        },
+        "body_size_bytes": {
+          "type": ["integer", "null"],
+          "description": "Size of the HTTP response body in bytes"
+        },
+        "body_sha256": {
+          "type": ["string", "null"],
+          "description": "SHA256 of the response body, for detecting repeated false positives"
+        },
+        "service_reachable": {
+          "type": "boolean",
+          "description": "True if TCP connect succeeded and HTTP returned any response"
+        },
+        "service_authentic": {
+          "type": "boolean",
+          "description": "True if the response does not match known host default pages"
+        },
+        "false_positive_reason": {
+          "type": ["string", "null"],
+          "description": "If service_authentic is false, the matched signature, e.g. apache2_ubuntu_default"
+        }
+      }
+    },
+
+    "stability": {
+      "type": "object",
+      "description": "Re-probe 60 seconds after tool declares success",
+      "required": ["probe_attempted", "service_reachable_at_60s", "service_authentic_at_60s"],
+      "properties": {
+        "probe_attempted": {
+          "type": "boolean",
+          "description": "Whether the stability probe ran. False if initial service was not reachable."
+        },
+        "service_reachable_at_60s": {
+          "type": ["boolean", "null"],
+          "description": "Whether the service was still reachable 60 seconds after initial success"
+        },
+        "service_authentic_at_60s": {
+          "type": ["boolean", "null"],
+          "description": "Whether the service was still authentic at the 60-second probe"
+        }
+      }
+    },
+
+    "cleanup": {
+      "type": "object",
+      "description": "Post-run environment check",
+      "required": ["stale_tap_devices", "orphan_qemu_pids", "orphan_docker_containers", "cleanup_clean"],
+      "properties": {
+        "stale_tap_devices": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Names of TAP network interfaces still present after the tool exited"
+        },
+        "orphan_qemu_pids": {
+          "type": "array",
+          "items": {"type": "integer"},
+          "description": "PIDs of QEMU processes still running after the tool exited"
+        },
+        "orphan_docker_containers": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Docker container IDs still running after the tool exited"
+        },
+        "cleanup_clean": {
+          "type": "boolean",
+          "description": "True if all three stale lists are empty"
+        }
+      }
+    },
+
+    "logs": {
+      "type": "object",
+      "description": "Paths to raw tool output logs",
+      "required": ["stdout_path", "stderr_path"],
+      "properties": {
+        "stdout_path": {
+          "type": ["string", "null"],
+          "description": "Relative path to the captured stdout log"
+        },
+        "stderr_path": {
+          "type": ["string", "null"],
+          "description": "Relative path to the captured stderr log"
+        }
+      }
+    },
+
+    "notes": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Free-text observations added during the run, e.g. unexpected warnings"
+    }
+  }
+}

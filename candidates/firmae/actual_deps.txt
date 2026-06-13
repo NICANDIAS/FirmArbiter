@@ -1,0 +1,3 @@
+# Actual dependencies for FirmAE
+# Record every package you add to the Dockerfile to make it work.
+# The gap between this file and declared_deps.txt is a benchmark finding.

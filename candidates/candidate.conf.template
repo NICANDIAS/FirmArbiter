@@ -1,0 +1,34 @@
+# candidate.conf — template for adding a new tool to VERITAS
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file to candidates/<your_tool_name>/candidate.conf
+# and fill in the values below.
+#
+# Then create candidates/<your_tool_name>/run_adapter.sh
+# that translates VERITAS's standard call into your tool's actual command.
+#
+# That is all you need. VERITAS discovers the tool automatically.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Human-readable name shown in reports and terminal output
+name = My Tool
+
+# Short identifier used in filenames and the summary table.
+# Must match the folder name exactly. Use lowercase, no spaces.
+id = my_tool
+
+# Where to find the tool — a GitHub URL or version number.
+# This is for documentation only, not used for running the tool.
+version_hint = https://github.com/author/my_tool
+
+# The strings VERITAS watches for in this tool's stdout to detect
+# that emulation succeeded. Comma-separated, case-insensitive.
+# Look at what your tool prints when it succeeds and copy those phrases here.
+success_signals = network reachable, web service, emulation complete
+
+# CPU architectures this tool can handle.
+# VERITAS will skip firmware images whose architecture is not in this list.
+# Common values: arm, mips, mipsel, mips64, x86, x86_64, aarch64, powerpc
+supported_architectures = arm, mips, mipsel, x86
+
+# Set to true if run_adapter.sh needs sudo to run the tool.
+requires_sudo = false

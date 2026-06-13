@@ -1,0 +1,27 @@
+# VERITAS Python dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+# We use minimum-version pins (>=) rather than exact pins (==) so that VERITAS
+# continues to work as libraries release new versions over time. The self-update
+# system in veritas_selfcheck.py keeps these current automatically.
+#
+# If a specific version causes problems, pin it here with == and add a comment
+# explaining why, so future maintainers know not to remove it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# HTTP probing for service authenticity checks
+requests>=2.28.0
+
+# JSON schema validation for result files
+jsonschema>=4.17.0
+
+# CSV and reporting
+pandas>=1.5.0
+
+# Process monitoring (CPU and RAM per PID)
+psutil>=5.9.0
+
+# Structured logging
+python-json-logger>=2.0.4
+
+# Package version introspection (used by self-check)
+packaging>=21.0

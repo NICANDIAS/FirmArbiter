@@ -1,0 +1,96 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+veritas_env/
+
+# VERITAS generated outputs
+results/
+reports/
+logs/
+runs/
+artifacts/
+
+# Firmware corpora and samples
+firmware/
+firmwares/
+vendor_firmware/
+corpus/
+*.bin
+*.img
+*.trx
+*.chk
+*.itb
+*.ubi
+*.uimage
+*.fw
+*.rom
+
+# Archives and exported bundles
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Docker / VM / disk images
+*.iso
+*.qcow2
+*.vdi
+*.vmdk
+*.raw
+*.ova
+*.utm
+*.dockerimage
+
+# Local machine files
+.DS_Store
+Thumbs.db
+
+# Local secrets/config
+.env
+*.secret
+*.key
+*.pem
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local backup files
+*.bak
+*.bak.*
+*.orig
+*.rej
+
+# Local setup-generated Python wrappers
+python
+python3
+
+# Candidate-local machine paths
+.local_path
+candidates/*/.local_path
+
+# Temporary repair/backup files
+*.bak
+*.bak.*
+*.before_*
+*.broken_*
+*.partitionfix
+*.orig
+*.rej
+
+# Local machine-specific VERITAS config
+veritas.conf
