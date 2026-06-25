@@ -1,0 +1,165 @@
+FIRMAE UPSTREAM DEPENDENCY DECLARATIONS
+Collected UTC: 2026-06-25T20:43:12+00:00
+
+Source path: /home/ubuntu/Desktop/FirmAE
+Source commit: dd98505984feac91cf113e13d5de01a4fc1574f2
+
+=== install.sh package commands ===
+4:sudo apt install -y curl wget tar git ruby python3 python3-pip bc
+5:sudo python3 -m pip install --upgrade pip
+6:sudo python3 -m pip install coloredlogs
+9:sudo apt install -y docker.io
+14:sudo apt install -y postgresql
+22:sudo apt install -y libpq-dev
+23:python3 -m pip install psycopg2 psycopg2-binary
+25:sudo apt install -y busybox-static bash-static fakeroot dmsetup kpartx netcat-openbsd nmap python3-psycopg2 snmp uml-utilities util-linux vlan
+28:wget https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz && \
+32:  sed -i 's/^REQUIRED_UTILS="wget tar python"/REQUIRED_UTILS="wget tar python3"/g' deps.sh && \
+35:sudo apt install -y mtd-utils gzip bzip2 tar arj lhasa p7zip p7zip-full cabextract fusecram cramfsswap squashfs-tools sleuthkit default-jdk cpio lzop lzma srecord zlib1g-dev liblzma-dev liblzo2-dev unzip
+41:python3 -m pip install python-lzo cstruct ubi_reader
+42:sudo apt install -y python3-magic openjdk-8-jdk unrar
+45:sudo apt install -y python3-bs4
+46:python3 -m pip install selenium
+47:wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+50:python3 -m pip install -r ./analyses/routersploit/requirements.txt
+54:sudo apt install -y qemu-system-arm qemu-system-mips qemu-system-x86 qemu-utils
+57:    wget https://chromedriver.storage.googleapis.com/2.38/chromedriver_linux64.zip
+
+=== core/Dockerfile package commands ===
+5:RUN apt-get install -y apt-utils
+6:RUN apt-get install -y wget tar bc psmisc ruby telnet
+7:RUN apt-get install -y socat net-tools iputils-ping iptables iproute2 curl
+8:RUN apt-get install -yy python3 python3-pip
+9:RUN python3 -m pip install --upgrade pip
+11:RUN apt-get install -y libpq-dev
+12:RUN python3 -m pip install psycopg2 psycopg2-binary
+14:RUN apt-get install -y busybox-static bash-static fakeroot git kpartx netcat-openbsd nmap python3-psycopg2 snmp uml-utilities util-linux vlan
+19:RUN wget https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz && \
+23:    sed -i 's/^REQUIRED_UTILS="wget tar python"/REQUIRED_UTILS="wget tar python3"/g' deps.sh && \
+26:RUN apt-get install -y mtd-utils gzip bzip2 tar arj lhasa p7zip p7zip-full cabextract fusecram cramfsswap squashfs-tools sleuthkit default-jdk cpio lzop lzma srecord zlib1g-dev liblzma-dev liblzo2-dev
+28:RUN python3 -m pip install python-lzo cstruct ubi_reader
+29:RUN apt-get install -y python3-magic unrar
+31:RUN apt-get install -y openjdk-8-jdk
+34:RUN apt-get install -y qemu-system-arm qemu-system-mips qemu-system-x86 qemu-utils
+37:RUN python3 -m pip install selenium bs4 requests future paramiko pysnmp==4.4.6 pycryptodome
+39:RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+42:RUN apt-get install -y google-chrome-stable
+43:RUN apt-get install -y ntfs-3g
+
+=== Full upstream install.sh ===
+#!/bin/bash
+
+sudo apt update
+sudo apt install -y curl wget tar git ruby python3 python3-pip bc
+sudo python3 -m pip install --upgrade pip
+sudo python3 -m pip install coloredlogs
+
+# for docker
+sudo apt install -y docker.io
+sudo groupadd docker
+sudo usermod -aG docker $USER
+
+# postgresql
+sudo apt install -y postgresql
+sudo /etc/init.d/postgresql restart
+sudo -u postgres bash -c "psql -c \"CREATE USER firmadyne WITH PASSWORD 'firmadyne';\""
+sudo -u postgres createdb -O firmadyne firmware
+sudo -u postgres psql -d firmware < ./database/schema
+echo "listen_addresses = '172.17.0.1,127.0.0.1,localhost'" | sudo -u postgres tee --append /etc/postgresql/*/main/postgresql.conf
+echo "host all all 172.17.0.1/24 trust" | sudo -u postgres tee --append /etc/postgresql/*/main/pg_hba.conf
+
+sudo apt install -y libpq-dev
+python3 -m pip install psycopg2 psycopg2-binary
+
+sudo apt install -y busybox-static bash-static fakeroot dmsetup kpartx netcat-openbsd nmap python3-psycopg2 snmp uml-utilities util-linux vlan
+
+# for binwalk
+wget https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz && \
+  tar -xf v2.3.4.tar.gz && \
+  cd binwalk-2.3.4 && \
+  sed -i 's/^install_ubireader//g' deps.sh && \
+  sed -i 's/^REQUIRED_UTILS="wget tar python"/REQUIRED_UTILS="wget tar python3"/g' deps.sh && \
+  echo y | ./deps.sh && \
+  sudo python3 setup.py install
+sudo apt install -y mtd-utils gzip bzip2 tar arj lhasa p7zip p7zip-full cabextract fusecram cramfsswap squashfs-tools sleuthkit default-jdk cpio lzop lzma srecord zlib1g-dev liblzma-dev liblzo2-dev unzip
+
+cd - # back to root of project
+
+sudo cp core/unstuff /usr/local/bin/
+
+python3 -m pip install python-lzo cstruct ubi_reader
+sudo apt install -y python3-magic openjdk-8-jdk unrar
+
+# for analyzer, initializer
+sudo apt install -y python3-bs4
+python3 -m pip install selenium
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo dpkg -i google-chrome-stable_current_amd64.deb; sudo apt -fy install
+rm google-chrome-stable_current_amd64.deb
+python3 -m pip install -r ./analyses/routersploit/requirements.txt
+cd ./analyses/routersploit && patch -p1 < ../routersploit_patch && cd -
+
+# for qemu
+sudo apt install -y qemu-system-arm qemu-system-mips qemu-system-x86 qemu-utils
+
+if ! test -e "./analyses/chromedriver"; then
+    wget https://chromedriver.storage.googleapis.com/2.38/chromedriver_linux64.zip
+    unzip chromedriver_linux64.zip -d ./analyses/
+    rm -rf chromedriver_linux64.zip
+fi
+
+=== Full upstream core/Dockerfile ===
+FROM ubuntu:20.04
+LABEL org.opencontainers.image.authors="Mingeun Kim <pr0v3rbs@kaist.ac.kr>, Minkyo Seo <0xsaika@gmail.com>"
+
+RUN apt-get update
+RUN apt-get install -y apt-utils
+RUN apt-get install -y wget tar bc psmisc ruby telnet
+RUN apt-get install -y socat net-tools iputils-ping iptables iproute2 curl
+RUN apt-get install -yy python3 python3-pip
+RUN python3 -m pip install --upgrade pip
+
+RUN apt-get install -y libpq-dev
+RUN python3 -m pip install psycopg2 psycopg2-binary
+
+RUN apt-get install -y busybox-static bash-static fakeroot git kpartx netcat-openbsd nmap python3-psycopg2 snmp uml-utilities util-linux vlan
+
+# for binwalk
+# bypass tzdata interaction
+ENV DEBIAN_FRONTEND=noninteractive
+RUN wget https://github.com/ReFirmLabs/binwalk/archive/refs/tags/v2.3.4.tar.gz && \
+    tar -xf v2.3.4.tar.gz && \
+    cd binwalk-2.3.4 && \
+    sed -i 's/^install_ubireader//g' deps.sh && \
+    sed -i 's/^REQUIRED_UTILS="wget tar python"/REQUIRED_UTILS="wget tar python3"/g' deps.sh && \
+    echo y | ./deps.sh && \
+    python3 setup.py install
+RUN apt-get install -y mtd-utils gzip bzip2 tar arj lhasa p7zip p7zip-full cabextract fusecram cramfsswap squashfs-tools sleuthkit default-jdk cpio lzop lzma srecord zlib1g-dev liblzma-dev liblzo2-dev
+
+RUN python3 -m pip install python-lzo cstruct ubi_reader
+RUN apt-get install -y python3-magic unrar
+
+RUN apt-get install -y openjdk-8-jdk
+
+# for qemu
+RUN apt-get install -y qemu-system-arm qemu-system-mips qemu-system-x86 qemu-utils
+
+# for analyzer
+RUN python3 -m pip install selenium bs4 requests future paramiko pysnmp==4.4.6 pycryptodome
+# google chrome
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+RUN echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' | tee /etc/apt/sources.list.d/google-chrome.list
+RUN apt-get update
+RUN apt-get install -y google-chrome-stable
+RUN apt-get install -y ntfs-3g
+RUN ln -s /bin/ntfs-3g /bin/mount.ntfs-3g
+
+COPY ./sudo /usr/bin/sudo
+RUN chmod 777 /usr/bin/sudo
+
+RUN mkdir -p /work/FirmAE
+RUN mkdir -p /work/firmwares
+COPY unstuff /usr/local/bin/
+
+ENV USER=root
+ENV FIRMAE_DOCKER=true

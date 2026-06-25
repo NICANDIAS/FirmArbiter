@@ -1,0 +1,5 @@
+package	installed	candidate
+libc6	2.35-0ubuntu3.13	2.35-0ubuntu3.13
+perl-base	5.34.0-3ubuntu1.5	5.34.0-3ubuntu1.5
+libudev1	249.11-0ubuntu3.20	249.11-0ubuntu3.21
+apt	2.4.14	2.4.14

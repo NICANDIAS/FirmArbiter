@@ -2,22 +2,29 @@ FROM --platform=linux/amd64 ubuntu:22.04@sha256:ce941a2a18bbb922e434d6d6d2b31e57
 
 ARG FIRMAE_COMMIT=dd98505984feac91cf113e13d5de01a4fc1574f2
 ARG FIRMAE_PATCH_SHA256=09a68175811a400cbd9584680153c9a6636bf2b806c4a2554f85b9be01ecdbc3
+ARG UBUNTU_SNAPSHOT=20260615T120000Z
 
 LABEL org.opencontainers.image.title="VERITAS FirmAE Adapter"
 LABEL org.opencontainers.image.source="https://github.com/pr0v3rbs/FirmAE"
 LABEL org.opencontainers.image.revision="${FIRMAE_COMMIT}"
 LABEL veritas.adapter.id="firmae"
 LABEL veritas.adapter.contract-version="1.0"
+LABEL veritas.dependencies.ubuntu-snapshot="${UBUNTU_SNAPSHOT}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV FIRMAE_HOME=/opt/firmae
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        git \
-        python3 \
-    && rm -rf /var/lib/apt/lists/*
+COPY dependencies/apt-direct.txt \
+    /opt/veritas-adapter/dependencies/apt-direct.txt
+
+COPY scripts/install_apt_dependencies.sh \
+    /usr/local/bin/veritas-install-firmae-dependencies
+
+RUN chmod 0755 \
+        /usr/local/bin/veritas-install-firmae-dependencies \
+    && /usr/local/bin/veritas-install-firmae-dependencies \
+        "${UBUNTU_SNAPSHOT}" \
+        /opt/veritas-adapter/dependencies/apt-direct.txt
 
 RUN git init "${FIRMAE_HOME}" \
     && git -C "${FIRMAE_HOME}" remote add origin \
