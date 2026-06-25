@@ -1,0 +1,12 @@
+FIRMAE LEGACY CHECKOUT STATUS
+Collected UTC: 2026-06-25T20:17:00+00:00
+
+Path: /home/ubuntu/Desktop/FirmAE
+HEAD: dd98505984feac91cf113e13d5de01a4fc1574f2
+Pinned: dd98505984feac91cf113e13d5de01a4fc1574f2
+
+=== STATUS ===
+ ? analyses/routersploit
+?? DIR-868L_fw_revB_2-05b02_eu_multi_20161117.zip
+
+=== TRACKED DIFF AGAINST PINNED COMMIT ===

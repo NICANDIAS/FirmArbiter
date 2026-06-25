@@ -1,0 +1,53 @@
+[
+    {
+        "Architecture": "arm64",
+        "Config": {
+            "Entrypoint": [
+                "bash",
+                "/opt/run_adapter.sh"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "DEBIAN_FRONTEND=noninteractive",
+                "TZ=UTC"
+            ],
+            "Labels": {
+                "org.opencontainers.image.version": "22.04"
+            },
+            "WorkingDir": "/opt/firmae"
+        },
+        "Created": "2026-06-13T03:39:21.981040464+01:00",
+        "Descriptor": {
+            "digest": "sha256:ea000d6f30990cfcc842c70a8b3cfdfc67144bc91f0a4404f91f2edc811cec29",
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "size": 2280
+        },
+        "Id": "sha256:ea000d6f30990cfcc842c70a8b3cfdfc67144bc91f0a4404f91f2edc811cec29",
+        "Metadata": {
+            "LastTagTime": "2026-06-25T15:39:17.233400543Z"
+        },
+        "Os": "linux",
+        "Parent": "sha256:927d8ab9dde57c3082aace61ba869eb705070cf7d151c76360713843c772d934",
+        "RepoDigests": [
+            "veritas/firmae@sha256:ea000d6f30990cfcc842c70a8b3cfdfc67144bc91f0a4404f91f2edc811cec29"
+        ],
+        "RepoTags": [
+            "veritas/firmae:before-persistent-mode"
+        ],
+        "RootFS": {
+            "Layers": [
+                "sha256:51ac65eda65f11fcff046218961ade89580d5400827c2e79bcfcfc93ae4abdb4",
+                "sha256:fa855e9a7370799fe703c5bd8c867ac1e9d5c81938d3bdf3bf2a406259b932e5",
+                "sha256:44c24433de920b63c487663fc2c21823aa342373bbf38fcd7007066eaa8339ac",
+                "sha256:eaeae4bb5e86b47729dd21e5cceea677cf50eda328bfab26b818e3883d3e1992",
+                "sha256:5f6473994bfc1f068c08abbfb3f2187eb807c8a2c80476615259ae3cce852289",
+                "sha256:0bfdcf06427c91fcb4bc8e4fc54ccda103e5e5896b02c5697bd6f92a660c0366",
+                "sha256:35a14ec06e86beb90dd632218ccb882ba564e82b7af7f483d66ce4f87fd257cc",
+                "sha256:7be7ff8ee3460f7466e27b41d62e09e395c2da2f3821b0fef95314c2a85f905f",
+                "sha256:8a59c870a797a0aa40da4fef0665e7d45f172026138f921940486fb314446b74"
+            ],
+            "Type": "layers"
+        },
+        "Size": 1195268463
+    }
+]

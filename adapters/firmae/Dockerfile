@@ -1,6 +1,7 @@
 FROM --platform=linux/amd64 ubuntu:22.04@sha256:ce941a2a18bbb922e434d6d6d2b31e571a5c3826eaf6ada0a41dcc905bd2d906
 
 ARG FIRMAE_COMMIT=dd98505984feac91cf113e13d5de01a4fc1574f2
+ARG FIRMAE_PATCH_SHA256=09a68175811a400cbd9584680153c9a6636bf2b806c4a2554f85b9be01ecdbc3
 
 LABEL org.opencontainers.image.title="VERITAS FirmAE Adapter"
 LABEL org.opencontainers.image.source="https://github.com/pr0v3rbs/FirmAE"
@@ -31,6 +32,31 @@ RUN git init "${FIRMAE_HOME}" \
         submodule update --init --recursive \
     && printf '%s\n' "${FIRMAE_COMMIT}" \
         > "${FIRMAE_HOME}/.veritas_commit"
+
+COPY patches/0001-container-loop-partition-compatibility.patch \
+    /opt/veritas-adapter/patches/0001-container-loop-partition-compatibility.patch
+
+RUN test "$(sha256sum \
+        /opt/veritas-adapter/patches/0001-container-loop-partition-compatibility.patch \
+        | awk '{print $1}')" \
+        = "${FIRMAE_PATCH_SHA256}" \
+    && git -C "${FIRMAE_HOME}" apply \
+        --check \
+        /opt/veritas-adapter/patches/0001-container-loop-partition-compatibility.patch \
+    && git -C "${FIRMAE_HOME}" apply \
+        /opt/veritas-adapter/patches/0001-container-loop-partition-compatibility.patch \
+    && git -C "${FIRMAE_HOME}" diff --check \
+    && grep -F \
+        'SYSDEV="/sys/block/${LOOP_BASE}/${PART_BASE}/dev"' \
+        "${FIRMAE_HOME}/firmae.config" \
+    && grep -F \
+        'mknod "${DEV_PATH}" b "${MAJ}" "${MIN}"' \
+        "${FIRMAE_HOME}/firmae.config" \
+    && grep -F \
+        'kpartx -avs "${LOOP_DEV}"' \
+        "${FIRMAE_HOME}/firmae.config" \
+    && printf '%s\n' "${FIRMAE_PATCH_SHA256}" \
+        > "${FIRMAE_HOME}/.veritas_patch_sha256"
 
 RUN mkdir -p /opt/veritas-adapter
 

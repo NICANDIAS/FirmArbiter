@@ -11,7 +11,12 @@ candidate:
     type: git
     repository: https://github.com/pr0v3rbs/FirmAE.git
     commit: dd98505984feac91cf113e13d5de01a4fc1574f2
-  patches: []
+  patches:
+  - path: patches/0001-container-loop-partition-compatibility.patch
+    sha256: 09a68175811a400cbd9584680153c9a6636bf2b806c4a2554f85b9be01ecdbc3
+    description: Makes FirmAE loop-partition discovery reliable inside containers
+      by resolving the allocated loop device, creating a missing partition block node
+      from sysfs metadata, and using kpartx as a fallback.
 build:
   context: .
   dockerfile: Dockerfile

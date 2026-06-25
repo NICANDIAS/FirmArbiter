@@ -1,0 +1,11 @@
+FIRMAE TRACKED SOURCE COMPARISON CONCLUSION
+
+The known-working local FirmAE checkout and the pinned upstream
+revision both resolve to:
+
+dd98505984feac91cf113e13d5de01a4fc1574f2
+
+No tracked parent-repository source differences were detected.
+
+The modified analyses/routersploit submodule state and the untracked
+firmware ZIP are not FirmAE compatibility patches and are excluded.
