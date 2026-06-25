@@ -15,14 +15,16 @@ from pathlib import Path
 from typing import Any
 
 
-class HealthHandler(BaseHTTPRequestHandler):
+class FirmwareContentHandler(BaseHTTPRequestHandler):
+    response_body = b""
+
     def do_GET(self) -> None:
-        body = b"VERITAS neutral test service\n"
+        body = type(self).response_body
 
         self.send_response(200)
         self.send_header(
             "Content-Type",
-            "text/plain; charset=utf-8",
+            "application/octet-stream",
         )
         self.send_header(
             "Content-Length",
@@ -66,6 +68,11 @@ def main() -> int:
     events_path = Path(request["paths"]["events"])
     control_directory = Path(request["paths"]["control"])
     shutdown_path = control_directory / "shutdown.json"
+
+    firmware_path = Path(request["firmware"]["path"])
+    firmware_content = firmware_path.read_bytes()
+
+    FirmwareContentHandler.response_body = firmware_content
 
     events_path.parent.mkdir(parents=True, exist_ok=True)
     control_directory.mkdir(parents=True, exist_ok=True)
@@ -117,7 +124,7 @@ def main() -> int:
 
         server = ThreadingHTTPServer(
             ("127.0.0.1", 0),
-            HealthHandler,
+            FirmwareContentHandler,
         )
 
         service_port = int(server.server_address[1])
