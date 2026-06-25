@@ -1,0 +1,660 @@
+===== SCHEMA FILES =====
+schemas/adapter-event-v1.schema.json
+schemas/adapter-manifest-v1.schema.json
+schemas/run-request-v1.schema.json
+
+===== COMPLETE REQUEST AND EVENT SCHEMAS =====
+
+----- schemas/adapter-event-v1.schema.json -----
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:veritas:schema:adapter-event:1.0",
+  "title": "VERITAS Adapter Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_version",
+    "event",
+    "sequence",
+    "timestamp",
+    "run_id",
+    "adapter_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "adapter_started",
+        "candidate_started",
+        "extraction_complete",
+        "candidate_boot_reported",
+        "endpoint_reported",
+        "heartbeat",
+        "shutdown_started",
+        "cleanup_complete",
+        "adapter_stopped",
+        "error"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "adapter_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "waiting_for_shutdown",
+        "shutting_down"
+      ]
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port",
+        "protocol"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp",
+            "http",
+            "https",
+            "ssh",
+            "telnet",
+            "other"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "phase",
+        "message",
+        "recoverable"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "adapter_setup",
+            "candidate_setup",
+            "candidate_execution",
+            "shutdown",
+            "cleanup",
+            "contract"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "recoverable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "terminated"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "endpoint_reported"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "endpoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "adapter_stopped"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "outcome"
+        ]
+      }
+    }
+  ]
+}
+
+----- schemas/run-request-v1.schema.json -----
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:veritas:schema:run-request:1.0",
+  "title": "VERITAS Run Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_version",
+    "run",
+    "firmware",
+    "lifecycle",
+    "resources",
+    "runtime_grants",
+    "paths",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "run_id",
+        "adapter_id",
+        "attempt",
+        "created_at",
+        "requested_stages"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "adapter_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requested_stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "unpack",
+              "emulate",
+              "static-analysis",
+              "dynamic-analysis",
+              "endpoint-discovery"
+            ]
+          }
+        }
+      }
+    },
+    "firmware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "path",
+        "sha256",
+        "size_bytes",
+        "delivery_semantics",
+        "read_only"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "path": {
+          "const": "/veritas/input/firmware"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivery_semantics": {
+          "const": "opaque-original-bytes"
+        },
+        "read_only": {
+          "const": true
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_seconds",
+        "heartbeat_interval_seconds",
+        "heartbeat_timeout_seconds",
+        "shutdown_grace_seconds"
+      ],
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "heartbeat_interval_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "heartbeat_timeout_seconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 7200
+        },
+        "shutdown_grace_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_cores",
+        "memory_bytes",
+        "pids_limit"
+      ],
+      "properties": {
+        "cpu_cores": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1048576
+        },
+        "pids_limit": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "runtime_grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_as_root",
+        "network",
+        "requirements"
+      ],
+      "properties": {
+        "run_as_root": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "none",
+            "isolated",
+            "host"
+          ]
+        },
+        "requirements": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "kvm",
+              "loop-devices",
+              "device-mapper",
+              "tun-tap",
+              "net-admin",
+              "ptrace",
+              "nested-containers",
+              "full-privileged"
+            ]
+          }
+        }
+      }
+    },
+    "hints": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/architectureHint"
+        },
+        "vendor": {
+          "$ref": "#/$defs/vendorHint"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace",
+        "artifacts",
+        "events",
+        "control"
+      ],
+      "properties": {
+        "workspace": {
+          "const": "/veritas/work"
+        },
+        "artifacts": {
+          "const": "/veritas/artifacts"
+        },
+        "events": {
+          "const": "/veritas/events/events.jsonl"
+        },
+        "control": {
+          "const": "/veritas/control"
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter_manifest_sha256",
+        "experiment_manifest_sha256"
+      ],
+      "properties": {
+        "adapter_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "experiment_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hintSource": {
+      "type": "string",
+      "enum": [
+        "corpus-manifest",
+        "independent-preflight",
+        "experiment-config"
+      ]
+    },
+    "architectureHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "enum": [
+            "arm",
+            "arm64",
+            "mips",
+            "mipsel",
+            "x86",
+            "x86_64",
+            "powerpc",
+            "unknown"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/hintSource"
+        }
+      }
+    },
+    "vendorHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/hintSource"
+        }
+      }
+    }
+  }
+}
+
+===== CANONICAL NON-FIRMAE ENTRYPOINTS =====
+
+===== CONTRACT TEST REFERENCES =====
+tests/test_independent_reachability.py:71:            "run_id": (
+tests/test_independent_reachability.py:95:            "heartbeat_interval_seconds": 1,
+tests/test_independent_reachability.py:96:            "heartbeat_timeout_seconds": 3,
+tests/test_environment_residue.py:93:            "run_id": (
+tests/test_environment_residue.py:117:            "heartbeat_interval_seconds": 1,
+tests/test_environment_residue.py:118:            "heartbeat_timeout_seconds": 3,
+tests/test_environment_residue.py:372:                    "completed",
+tests/test_boot_validation.py:66:                    run_outcome="completed"
+tests/test_boot_validation.py:121:                    run_outcome="completed"
+tests/test_boot_validation.py:145:                    run_outcome="completed"
+tests/test_boot_validation.py:177:                    run_outcome="completed"
+tests/test_environment_janitor.py:96:        run_id = "experiment.case.adapter.attempt-1"
+tests/test_environment_janitor.py:105:                "veritas.run_id": run_id,
+tests/test_environment_janitor.py:116:                "veritas.run_id": "another-run",
+tests/test_environment_janitor.py:131:            run_id=run_id,
+tests/test_environment_janitor.py:186:            run_id="run-1",
+tests/test_environment_janitor.py:207:        run_id = "run-1"
+tests/test_environment_janitor.py:217:                "veritas.run_id": run_id,
+tests/test_environment_janitor.py:227:            run_id=run_id,
+tests/test_environment_janitor.py:239:                            "veritas.run_id": "different-run",
+tests/test_environment_janitor.py:293:        run_id = (
+tests/test_environment_janitor.py:322:                    f"veritas.run_id={run_id}",
+tests/test_environment_janitor.py:407:                run_id=run_id,
+tests/test_docker_adapter_lifecycle.py:58:            "run_id": (
+tests/test_docker_adapter_lifecycle.py:83:            "heartbeat_interval_seconds": 1,
+tests/test_docker_adapter_lifecycle.py:84:            "heartbeat_timeout_seconds": 3,
+tests/test_docker_adapter_lifecycle.py:174:                    "heartbeat",
+tests/test_docker_adapter_lifecycle.py:247:                    "shutdown_started",
+tests/fixtures/mock_contract_adapter.py:53:    run_id = request["run"]["run_id"]
+tests/fixtures/mock_contract_adapter.py:89:                "run_id": run_id,
+tests/fixtures/mock_contract_adapter.py:104:            "adapter_started",
+tests/fixtures/mock_contract_adapter.py:109:            "candidate_started",
+tests/fixtures/mock_contract_adapter.py:132:        heartbeat_interval = max(
+tests/fixtures/mock_contract_adapter.py:136:                    "heartbeat_interval_seconds"
+tests/fixtures/mock_contract_adapter.py:141:        next_heartbeat = time.monotonic()
+tests/fixtures/mock_contract_adapter.py:146:            if current_time >= next_heartbeat:
+tests/fixtures/mock_contract_adapter.py:148:                    "heartbeat",
+tests/fixtures/mock_contract_adapter.py:151:                next_heartbeat = (
+tests/fixtures/mock_contract_adapter.py:152:                    current_time + heartbeat_interval
+tests/fixtures/mock_contract_adapter.py:158:            "shutdown_started",
+tests/fixtures/mock_contract_adapter.py:172:            outcome="completed",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:65:    run_id = request["run"]["run_id"]
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:101:                "run_id": run_id,
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:116:            "adapter_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:121:            "candidate_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:228:        heartbeat_interval = max(
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:232:                    "heartbeat_interval_seconds"
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:237:        next_heartbeat = time.monotonic()
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:242:            if current_time >= next_heartbeat:
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:244:                    "heartbeat",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:247:                next_heartbeat = (
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:248:                    current_time + heartbeat_interval
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:254:            "shutdown_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:269:            outcome="completed",
+tests/fixtures/mock_service_adapter.py:65:    run_id = request["run"]["run_id"]
+tests/fixtures/mock_service_adapter.py:101:                "run_id": run_id,
+tests/fixtures/mock_service_adapter.py:116:            "adapter_started",
+tests/fixtures/mock_service_adapter.py:121:            "candidate_started",
+tests/fixtures/mock_service_adapter.py:228:        heartbeat_interval = max(
+tests/fixtures/mock_service_adapter.py:232:                    "heartbeat_interval_seconds"
+tests/fixtures/mock_service_adapter.py:237:        next_heartbeat = time.monotonic()
+tests/fixtures/mock_service_adapter.py:242:            if current_time >= next_heartbeat:
+tests/fixtures/mock_service_adapter.py:244:                    "heartbeat",
+tests/fixtures/mock_service_adapter.py:247:                next_heartbeat = (
+tests/fixtures/mock_service_adapter.py:248:                    current_time + heartbeat_interval
+tests/fixtures/mock_service_adapter.py:254:            "shutdown_started",
+tests/fixtures/mock_service_adapter.py:269:            outcome="completed",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:53:    run_id = request["run"]["run_id"]
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:89:                "run_id": run_id,
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:104:            "adapter_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:109:            "candidate_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:132:        heartbeat_interval = max(
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:136:                    "heartbeat_interval_seconds"
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:141:        next_heartbeat = time.monotonic()
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:146:            if current_time >= next_heartbeat:
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:148:                    "heartbeat",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:151:                next_heartbeat = (
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:152:                    current_time + heartbeat_interval
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:158:            "shutdown_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:172:            outcome="completed",
+tests/test_adapter_lifecycle.py:49:            "run_id": "contract-test.case-001.mock-adapter.attempt-1",
+tests/test_adapter_lifecycle.py:69:            "heartbeat_interval_seconds": 1,
+tests/test_adapter_lifecycle.py:70:            "heartbeat_timeout_seconds": 3,
+tests/test_adapter_lifecycle.py:140:                    "heartbeat",
+tests/test_adapter_lifecycle.py:164:                        "adapter_started",
+tests/test_adapter_lifecycle.py:165:                        "candidate_started",
+tests/test_adapter_lifecycle.py:171:                heartbeat_events = [
+tests/test_adapter_lifecycle.py:174:                    if event_name == "heartbeat"
+tests/test_adapter_lifecycle.py:178:                    len(heartbeat_events),
+tests/test_adapter_lifecycle.py:180:                    "Adapter must emit at least one heartbeat before shutdown",
+tests/test_adapter_lifecycle.py:186:                        "shutdown_started",
+tests/test_adapter_lifecycle.py:192:                shutdown_index = event_names.index("shutdown_started")
+tests/test_adapter_lifecycle.py:196:                        event_name == "heartbeat"
+tests/test_adapter_lifecycle.py:199:                    "Only heartbeat events are permitted while awaiting shutdown",
+tests/test_adapter_lifecycle.py:238:                "event": "adapter_started",
+tests/test_adapter_lifecycle.py:241:                "run_id": "contract-test.run-1",
+tests/test_adapter_lifecycle.py:254:                expected_run_id="contract-test.run-1",
+tests/test_service_stability.py:74:            "run_id": (
+tests/test_service_stability.py:98:            "heartbeat_interval_seconds": 1,
+tests/test_service_stability.py:99:            "heartbeat_timeout_seconds": 3,
+tests/test_service_stability.py:222:                    observation.completed_samples,
+tests/test_service_stability.py:232:                    observation.failed_samples,
+tests/test_service_stability.py:289:        self.assertEqual(result.failed_samples, 1)
+tests/test_service_stability.py:341:            result.completed_samples,
+tests/test_service_stability.py:346:            result.completed_samples,
+tests/test_service_authenticity.py:139:            "run_id": (
+tests/test_service_authenticity.py:161:            "heartbeat_interval_seconds": 1,
+tests/test_service_authenticity.py:162:            "heartbeat_timeout_seconds": 3,
+tests/test_end_to_end_coordinator.py:105:                heartbeat_interval_seconds=1,
+tests/test_end_to_end_coordinator.py:106:                heartbeat_timeout_seconds=3,
+tests/test_end_to_end_coordinator.py:138:                "completed",
+tests/test_end_to_end_coordinator.py:352:                saved_result["run"]["run_id"],
+tests/test_end_to_end_coordinator.py:353:                result["run"]["run_id"],
+tests/test_compute_cost.py:76:            "run_id": (
+tests/test_compute_cost.py:100:            "heartbeat_interval_seconds": 1,
+tests/test_compute_cost.py:101:            "heartbeat_timeout_seconds": 3,
+tests/test_compute_cost.py:274:                    "heartbeat",
+tests/test_compute_cost.py:289:                    "completed",
+tests/test_lifecycle_watchdog.py:62:        "run_id": "watchdog-test.run-1",
+tests/test_lifecycle_watchdog.py:78:        heartbeat_timeout_seconds: float = 0.2,
+tests/test_lifecycle_watchdog.py:85:                "heartbeat_timeout_seconds": (
+tests/test_lifecycle_watchdog.py:86:                    heartbeat_timeout_seconds
+tests/test_lifecycle_watchdog.py:124:                        "shutdown_started",
+tests/test_lifecycle_watchdog.py:135:                        outcome="completed",
+tests/test_lifecycle_watchdog.py:193:            "run_id": (
+tests/test_lifecycle_watchdog.py:217:            "heartbeat_interval_seconds": 1,
+tests/test_lifecycle_watchdog.py:218:            "heartbeat_timeout_seconds": 3,
+tests/test_lifecycle_watchdog.py:273:    def test_normal_container_shutdown_is_completed(
+tests/test_lifecycle_watchdog.py:306:                    "heartbeat",
+tests/test_lifecycle_watchdog.py:322:                    "completed",
+tests/test_lifecycle_watchdog.py:419:    def test_heartbeat_loss_is_not_boot_failure(
+tests/test_lifecycle_watchdog.py:430:                        "adapter_started",
+tests/test_lifecycle_watchdog.py:435:                        "candidate_started",
+tests/test_lifecycle_watchdog.py:453:                "heartbeat_lost",
+tests/test_lifecycle_watchdog.py:458:                "heartbeat_lost",
+tests/test_lifecycle_watchdog.py:468:                "boot_failed",
+tests/test_lifecycle_watchdog.py:482:                        "adapter_started",
+tests/test_lifecycle_watchdog.py:487:                        "candidate_started",
+tests/test_lifecycle_watchdog.py:523:    def test_failed_shutdown_uses_forced_termination(
+tests/test_lifecycle_watchdog.py:534:                        "adapter_started",
+tests/test_lifecycle_watchdog.py:539:                        "candidate_started",
+tests/test_lifecycle_watchdog.py:544:                        "heartbeat",
+tests/test_lifecycle_watchdog.py:548:                heartbeat_timeout_seconds=5,
+tests/test_lifecycle_watchdog.py:558:                "heartbeat",
+tests/test_lifecycle_watchdog.py:570:                "shutdown_failed",

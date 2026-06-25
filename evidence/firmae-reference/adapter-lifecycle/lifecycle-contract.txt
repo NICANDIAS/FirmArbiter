@@ -1,0 +1,1963 @@
+FIRMAE ADAPTER LIFECYCLE CONTRACT DISCOVERY
+Collected UTC: 2026-06-25T23:32:27+00:00
+
+===== CURRENT FIRMAE MANIFEST =====
+schema_version: '1.0'
+adapter:
+  id: firmae
+  display_name: FirmAE Adapter
+  description: VERITAS reference adapter for a pinned FirmAE source revision
+  version: 0.1.0
+  contract_version: '1.0'
+candidate:
+  name: FirmAE
+  source:
+    type: git
+    repository: https://github.com/pr0v3rbs/FirmAE.git
+    commit: dd98505984feac91cf113e13d5de01a4fc1574f2
+  patches:
+  - path: patches/0001-container-loop-partition-compatibility.patch
+    sha256: 09a68175811a400cbd9584680153c9a6636bf2b806c4a2554f85b9be01ecdbc3
+    description: Makes FirmAE loop-partition discovery reliable inside containers
+      by resolving the allocated loop device, creating a missing partition block node
+      from sysfs metadata, and using kpartx as a fallback.
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+  - ubuntu:22.04@sha256:ce941a2a18bbb922e434d6d6d2b31e571a5c3826eaf6ada0a41dcc905bd2d906
+runtime:
+  run_as_root: true
+  network: host
+  requirements:
+  - loop-devices
+  - device-mapper
+  - tun-tap
+  - net-admin
+  - full-privileged
+capabilities:
+  stages:
+  - unpack
+  - emulate
+  - endpoint-discovery
+  firmware_architectures:
+  - unknown
+  endpoint_protocols:
+  - http
+  hints:
+    architecture: optional
+    vendor: unsupported
+
+===== CURRENT FIRMAE BOOTSTRAP ENTRYPOINT =====
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import sys
+
+
+def main() -> int:
+    print(
+        "The FirmAE source-pinned bootstrap image is not yet "
+        "a runnable VERITAS adapter.",
+        file=sys.stderr,
+    )
+
+    print(
+        "Dependency installation, lifecycle translation and "
+        "candidate execution will be added in later checkpoints.",
+        file=sys.stderr,
+    )
+
+    return 78
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+===== REQUEST AND EVENT SCHEMAS =====
+
+----- schemas/adapter-event-v1.schema.json -----
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:veritas:schema:adapter-event:1.0",
+  "title": "VERITAS Adapter Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_version",
+    "event",
+    "sequence",
+    "timestamp",
+    "run_id",
+    "adapter_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "adapter_started",
+        "candidate_started",
+        "extraction_complete",
+        "candidate_boot_reported",
+        "endpoint_reported",
+        "heartbeat",
+        "shutdown_started",
+        "cleanup_complete",
+        "adapter_stopped",
+        "error"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "adapter_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "waiting_for_shutdown",
+        "shutting_down"
+      ]
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port",
+        "protocol"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp",
+            "http",
+            "https",
+            "ssh",
+            "telnet",
+            "other"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "phase",
+        "message",
+        "recoverable"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "adapter_setup",
+            "candidate_setup",
+            "candidate_execution",
+            "shutdown",
+            "cleanup",
+            "contract"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "recoverable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "terminated"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "endpoint_reported"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "endpoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "adapter_stopped"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "outcome"
+        ]
+      }
+    }
+  ]
+}
+
+----- schemas/adapter-manifest-v1.schema.json -----
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veritas.example/schemas/adapter-manifest-v1.schema.json",
+  "title": "VERITAS Adapter Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "adapter",
+    "candidate",
+    "build",
+    "runtime",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "version",
+        "contract_version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "contract_version": {
+          "const": "1.0"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "repository",
+            "commit"
+          ],
+          "properties": {
+            "type": {
+              "const": "git"
+            },
+            "repository": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{40}$"
+            },
+            "requested_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        },
+        "patches": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256",
+              "description"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^patches/[A-Za-z0-9._/-]+$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            }
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "dockerfile",
+        "platform",
+        "base_images"
+      ],
+      "properties": {
+        "context": {
+          "type": "string",
+          "pattern": "^(\\.|[A-Za-z0-9._/-]+)$"
+        },
+        "dockerfile": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "linux/amd64",
+            "linux/arm64",
+            "linux/386",
+            "linux/arm/v7"
+          ]
+        },
+        "base_images": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\s@]+@sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_as_root",
+        "network",
+        "requirements"
+      ],
+      "properties": {
+        "run_as_root": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "none",
+            "isolated",
+            "host"
+          ]
+        },
+        "requirements": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "kvm",
+              "loop-devices",
+              "device-mapper",
+              "tun-tap",
+              "net-admin",
+              "ptrace",
+              "nested-containers",
+              "full-privileged"
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stages",
+        "firmware_architectures",
+        "endpoint_protocols",
+        "hints"
+      ],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "unpack",
+              "emulate",
+              "static-analysis",
+              "dynamic-analysis",
+              "endpoint-discovery"
+            ]
+          }
+        },
+        "firmware_architectures": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "arm",
+              "arm64",
+              "mips",
+              "mipsel",
+              "x86",
+              "x86_64",
+              "powerpc",
+              "unknown"
+            ]
+          }
+        },
+        "endpoint_protocols": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "tcp",
+              "udp",
+              "http",
+              "https",
+              "ssh",
+              "telnet",
+              "other"
+            ]
+          }
+        },
+        "hints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "architecture",
+            "vendor"
+          ],
+          "properties": {
+            "architecture": {
+              "type": "string",
+              "enum": [
+                "unsupported",
+                "optional",
+                "required"
+              ]
+            },
+            "vendor": {
+              "type": "string",
+              "enum": [
+                "unsupported",
+                "optional",
+                "required"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+----- schemas/run-request-v1.schema.json -----
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:veritas:schema:run-request:1.0",
+  "title": "VERITAS Run Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_version",
+    "run",
+    "firmware",
+    "lifecycle",
+    "resources",
+    "runtime_grants",
+    "paths",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "run_id",
+        "adapter_id",
+        "attempt",
+        "created_at",
+        "requested_stages"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "adapter_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requested_stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "unpack",
+              "emulate",
+              "static-analysis",
+              "dynamic-analysis",
+              "endpoint-discovery"
+            ]
+          }
+        }
+      }
+    },
+    "firmware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "path",
+        "sha256",
+        "size_bytes",
+        "delivery_semantics",
+        "read_only"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "path": {
+          "const": "/veritas/input/firmware"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivery_semantics": {
+          "const": "opaque-original-bytes"
+        },
+        "read_only": {
+          "const": true
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_seconds",
+        "heartbeat_interval_seconds",
+        "heartbeat_timeout_seconds",
+        "shutdown_grace_seconds"
+      ],
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "heartbeat_interval_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "heartbeat_timeout_seconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 7200
+        },
+        "shutdown_grace_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_cores",
+        "memory_bytes",
+        "pids_limit"
+      ],
+      "properties": {
+        "cpu_cores": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1048576
+        },
+        "pids_limit": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "runtime_grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_as_root",
+        "network",
+        "requirements"
+      ],
+      "properties": {
+        "run_as_root": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "none",
+            "isolated",
+            "host"
+          ]
+        },
+        "requirements": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "kvm",
+              "loop-devices",
+              "device-mapper",
+              "tun-tap",
+              "net-admin",
+              "ptrace",
+              "nested-containers",
+              "full-privileged"
+            ]
+          }
+        }
+      }
+    },
+    "hints": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/architectureHint"
+        },
+        "vendor": {
+          "$ref": "#/$defs/vendorHint"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace",
+        "artifacts",
+        "events",
+        "control"
+      ],
+      "properties": {
+        "workspace": {
+          "const": "/veritas/work"
+        },
+        "artifacts": {
+          "const": "/veritas/artifacts"
+        },
+        "events": {
+          "const": "/veritas/events/events.jsonl"
+        },
+        "control": {
+          "const": "/veritas/control"
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter_manifest_sha256",
+        "experiment_manifest_sha256"
+      ],
+      "properties": {
+        "adapter_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "experiment_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hintSource": {
+      "type": "string",
+      "enum": [
+        "corpus-manifest",
+        "independent-preflight",
+        "experiment-config"
+      ]
+    },
+    "architectureHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "enum": [
+            "arm",
+            "arm64",
+            "mips",
+            "mipsel",
+            "x86",
+            "x86_64",
+            "powerpc",
+            "unknown"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/hintSource"
+        }
+      }
+    },
+    "vendorHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/hintSource"
+        }
+      }
+    }
+  }
+}
+
+===== EXISTING ADAPTER ENTRYPOINTS =====
+
+===== LIFECYCLE EVENT REFERENCES =====
+adapters/firmae/adapter.yaml:39:  - endpoint-discovery
+adapters/firmae/adapter.yaml:42:  endpoint_protocols:
+schemas/result_schema.json:11:    "run_id",
+schemas/result_schema.json:41:    "run_id": {
+schemas/result_schema.json:48:      "description": "ISO 8601 UTC timestamp when the run started"
+schemas/result_schema.json:115:          "description": "Brief reason if boot failed, e.g. kernel_panic, nvram_missing, extraction_failed"
+schemas/result_schema.json:139:          "description": "HTTP status code returned, or null if TCP connect failed"
+schemas/adapter-manifest-v1.schema.json:211:        "endpoint_protocols",
+schemas/adapter-manifest-v1.schema.json:226:              "endpoint-discovery"
+schemas/adapter-manifest-v1.schema.json:248:        "endpoint_protocols": {
+schemas/run-request-v1.schema.json:30:        "run_id",
+schemas/run-request-v1.schema.json:41:        "run_id": {
+schemas/run-request-v1.schema.json:70:              "endpoint-discovery"
+schemas/run-request-v1.schema.json:116:        "heartbeat_interval_seconds",
+schemas/run-request-v1.schema.json:117:        "heartbeat_timeout_seconds",
+schemas/run-request-v1.schema.json:126:        "heartbeat_interval_seconds": {
+schemas/run-request-v1.schema.json:131:        "heartbeat_timeout_seconds": {
+schemas/run-request-v1.schema.json:223:        "artifacts",
+schemas/run-request-v1.schema.json:231:        "artifacts": {
+schemas/run-request-v1.schema.json:232:          "const": "/veritas/artifacts"
+schemas/adapter-event-v1.schema.json:13:    "run_id",
+schemas/adapter-event-v1.schema.json:26:        "adapter_started",
+schemas/adapter-event-v1.schema.json:27:        "candidate_started",
+schemas/adapter-event-v1.schema.json:30:        "endpoint_reported",
+schemas/adapter-event-v1.schema.json:31:        "heartbeat",
+schemas/adapter-event-v1.schema.json:32:        "shutdown_started",
+schemas/adapter-event-v1.schema.json:35:        "error"
+schemas/adapter-event-v1.schema.json:46:    "run_id": {
+schemas/adapter-event-v1.schema.json:65:    "endpoint": {
+schemas/adapter-event-v1.schema.json:98:    "error": {
+schemas/adapter-event-v1.schema.json:136:        "completed",
+schemas/adapter-event-v1.schema.json:137:        "failed",
+schemas/adapter-event-v1.schema.json:147:            "const": "endpoint_reported"
+schemas/adapter-event-v1.schema.json:153:          "endpoint"
+schemas/adapter-event-v1.schema.json:161:            "const": "error"
+schemas/adapter-event-v1.schema.json:167:          "error"
+tests/test_independent_reachability.py:20:    probe_endpoint_event,
+tests/test_independent_reachability.py:71:            "run_id": (
+tests/test_independent_reachability.py:80:                "endpoint-discovery"
+tests/test_independent_reachability.py:95:            "heartbeat_interval_seconds": 1,
+tests/test_independent_reachability.py:96:            "heartbeat_timeout_seconds": 3,
+tests/test_independent_reachability.py:111:            "artifacts": "/veritas/artifacts",
+tests/test_independent_reachability.py:143:            raise RuntimeError(
+tests/test_independent_reachability.py:174:                endpoint_event = supervisor.wait_for_event(
+tests/test_independent_reachability.py:175:                    "endpoint_reported",
+tests/test_independent_reachability.py:184:                    endpoint_event
+tests/test_independent_reachability.py:207:                    endpoint_event["endpoint"],
+tests/test_independent_reachability.py:213:                    endpoint_event,
+tests/test_independent_reachability.py:218:                    endpoint_event,
+tests/test_independent_reachability.py:234:                # The same endpoint must no longer be reachable.
+tests/test_independent_reachability.py:235:                post_shutdown = probe_endpoint_event(
+tests/test_independent_reachability.py:236:                    endpoint_event,
+tests/test_independent_reachability.py:263:                "event": "endpoint_reported",
+tests/test_independent_reachability.py:265:                "endpoint": {
+tests/test_independent_reachability.py:272:            observation = probe_endpoint_event(
+tests/test_independent_reachability.py:292:            "event": "endpoint_reported",
+tests/test_independent_reachability.py:294:            "endpoint": {
+tests/test_independent_reachability.py:301:        observation = probe_endpoint_event(event)
+veritas_core/adapter_registry.py:13:class AdapterRegistryError(RuntimeError):
+veritas_core/adapter_registry.py:54:    except ValueError as exc:
+veritas_core/adapter_registry.py:55:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:65:    except FileNotFoundError as exc:
+veritas_core/adapter_registry.py:66:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:69:    except json.JSONDecodeError as exc:
+veritas_core/adapter_registry.py:70:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:83:    except FileNotFoundError as exc:
+veritas_core/adapter_registry.py:84:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:87:    except yaml.YAMLError as exc:
+veritas_core/adapter_registry.py:88:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:93:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:107:    errors = sorted(
+veritas_core/adapter_registry.py:108:        validator.iter_errors(manifest),
+veritas_core/adapter_registry.py:109:        key=lambda error: list(error.absolute_path),
+veritas_core/adapter_registry.py:112:    if not errors:
+veritas_core/adapter_registry.py:117:    for error in errors:
+veritas_core/adapter_registry.py:119:            str(part) for part in error.absolute_path
+veritas_core/adapter_registry.py:122:            f"{location or '<root>'}: {error.message}"
+veritas_core/adapter_registry.py:127:    raise AdapterRegistryError(
+veritas_core/adapter_registry.py:128:        f"Manifest validation failed for {manifest_path}:\n"
+veritas_core/adapter_registry.py:146:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:157:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:169:            raise AdapterRegistryError(
+veritas_core/adapter_registry.py:176:            raise AdapterRegistryError(
+veritas_core/adapter_registry.py:224:        raise AdapterRegistryError(
+veritas_core/adapter_registry.py:236:            raise AdapterRegistryError(
+tests/test_lifecycle_watchdog.py:16:    DockerSupervisorError,
+tests/test_lifecycle_watchdog.py:62:        "run_id": "watchdog-test.run-1",
+tests/test_lifecycle_watchdog.py:78:        heartbeat_timeout_seconds: float = 0.2,
+tests/test_lifecycle_watchdog.py:85:                "heartbeat_timeout_seconds": (
+tests/test_lifecycle_watchdog.py:86:                    heartbeat_timeout_seconds
+tests/test_lifecycle_watchdog.py:124:                        "shutdown_started",
+tests/test_lifecycle_watchdog.py:135:                        outcome="completed",
+tests/test_lifecycle_watchdog.py:151:            raise DockerSupervisorError(
+tests/test_lifecycle_watchdog.py:193:            "run_id": (
+tests/test_lifecycle_watchdog.py:202:                "endpoint-discovery"
+tests/test_lifecycle_watchdog.py:217:            "heartbeat_interval_seconds": 1,
+tests/test_lifecycle_watchdog.py:218:            "heartbeat_timeout_seconds": 3,
+tests/test_lifecycle_watchdog.py:233:            "artifacts": "/veritas/artifacts",
+tests/test_lifecycle_watchdog.py:265:            raise RuntimeError(
+tests/test_lifecycle_watchdog.py:273:    def test_normal_container_shutdown_is_completed(
+tests/test_lifecycle_watchdog.py:301:                    "endpoint_reported",
+tests/test_lifecycle_watchdog.py:306:                    "heartbeat",
+tests/test_lifecycle_watchdog.py:322:                    "completed",
+tests/test_lifecycle_watchdog.py:354:                    / "artifacts"
+tests/test_lifecycle_watchdog.py:419:    def test_heartbeat_loss_is_not_boot_failure(
+tests/test_lifecycle_watchdog.py:430:                        "adapter_started",
+tests/test_lifecycle_watchdog.py:435:                        "candidate_started",
+tests/test_lifecycle_watchdog.py:453:                "heartbeat_lost",
+tests/test_lifecycle_watchdog.py:458:                "heartbeat_lost",
+tests/test_lifecycle_watchdog.py:468:                "boot_failed",
+tests/test_lifecycle_watchdog.py:482:                        "adapter_started",
+tests/test_lifecycle_watchdog.py:487:                        "candidate_started",
+tests/test_lifecycle_watchdog.py:523:    def test_failed_shutdown_uses_forced_termination(
+tests/test_lifecycle_watchdog.py:534:                        "adapter_started",
+tests/test_lifecycle_watchdog.py:539:                        "candidate_started",
+tests/test_lifecycle_watchdog.py:544:                        "heartbeat",
+tests/test_lifecycle_watchdog.py:548:                heartbeat_timeout_seconds=5,
+tests/test_lifecycle_watchdog.py:558:                "heartbeat",
+tests/test_lifecycle_watchdog.py:570:                "shutdown_failed",
+tests/test_environment_residue.py:61:    errors: dict[str, str] | None = None,
+tests/test_environment_residue.py:70:        source_errors=errors or {},
+tests/test_environment_residue.py:93:            "run_id": (
+tests/test_environment_residue.py:102:                "endpoint-discovery"
+tests/test_environment_residue.py:117:            "heartbeat_interval_seconds": 1,
+tests/test_environment_residue.py:118:            "heartbeat_timeout_seconds": 3,
+tests/test_environment_residue.py:133:            "artifacts": "/veritas/artifacts",
+tests/test_environment_residue.py:204:            source_errors={},
+tests/test_environment_residue.py:254:            source_errors={},
+tests/test_environment_residue.py:275:            errors={
+tests/test_environment_residue.py:277:                    "PermissionError: unavailable"
+tests/test_environment_residue.py:283:            errors={
+tests/test_environment_residue.py:285:                    "PermissionError: unavailable"
+tests/test_environment_residue.py:319:            raise RuntimeError(
+tests/test_environment_residue.py:360:                    "endpoint_reported",
+tests/test_environment_residue.py:372:                    "completed",
+tests/test_environment_residue.py:443:            artifact_directory = (
+tests/test_environment_residue.py:444:                contract_root / "artifacts"
+tests/test_environment_residue.py:449:                    artifact_directory
+tests/test_environment_residue.py:455:                    artifact_directory
+tests/test_environment_residue.py:461:                    artifact_directory
+tests/test_boot_validation.py:20:        / "artifacts"
+tests/test_boot_validation.py:66:                    run_outcome="completed"
+tests/test_boot_validation.py:99:                    / "artifacts"
+tests/test_boot_validation.py:121:                    run_outcome="completed"
+tests/test_boot_validation.py:145:                    run_outcome="completed"
+tests/test_boot_validation.py:177:                    run_outcome="completed"
+veritas_core/adapter_supervisor.py:12:    EventProtocolError,
+veritas_core/adapter_supervisor.py:16:class AdapterSupervisorError(RuntimeError):
+veritas_core/adapter_supervisor.py:25:    The later Docker backend will expose the same lifecycle operations.
+veritas_core/adapter_supervisor.py:43:        except FileNotFoundError as exc:
+veritas_core/adapter_supervisor.py:44:            raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:47:        except json.JSONDecodeError as exc:
+veritas_core/adapter_supervisor.py:48:            raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:52:        self.run_id = self.request["run"]["run_id"]
+veritas_core/adapter_supervisor.py:71:        artifacts_dir = self.contract_root / "artifacts"
+veritas_core/adapter_supervisor.py:72:        artifacts_dir.mkdir(parents=True, exist_ok=True)
+veritas_core/adapter_supervisor.py:74:        self.stdout_path = artifacts_dir / "adapter.stdout.log"
+veritas_core/adapter_supervisor.py:75:        self.stderr_path = artifacts_dir / "adapter.stderr.log"
+veritas_core/adapter_supervisor.py:80:            expected_run_id=self.run_id,
+veritas_core/adapter_supervisor.py:99:            raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:100:                "Adapter process has already been started"
+veritas_core/adapter_supervisor.py:124:        except EventProtocolError:
+veritas_core/adapter_supervisor.py:148:                    raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:155:        raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:164:            raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:165:                "Adapter process has not been started"
+veritas_core/adapter_supervisor.py:171:            "run_id": self.run_id,
+veritas_core/adapter_supervisor.py:193:            raise AdapterSupervisorError(
+veritas_core/adapter_supervisor.py:194:                "Adapter process has not been started"
+veritas_core/adapter_supervisor.py:202:            raise AdapterSupervisorError(
+tests/test_adapter_lifecycle.py:15:    EventProtocolError,
+tests/test_adapter_lifecycle.py:49:            "run_id": "contract-test.case-001.mock-adapter.attempt-1",
+tests/test_adapter_lifecycle.py:56:                "endpoint-discovery"
+tests/test_adapter_lifecycle.py:69:            "heartbeat_interval_seconds": 1,
+tests/test_adapter_lifecycle.py:70:            "heartbeat_timeout_seconds": 3,
+tests/test_adapter_lifecycle.py:85:            "artifacts": "/veritas/artifacts",
+tests/test_adapter_lifecycle.py:125:                endpoint_event = supervisor.wait_for_event(
+tests/test_adapter_lifecycle.py:126:                    "endpoint_reported",
+tests/test_adapter_lifecycle.py:131:                    endpoint_event["endpoint"]["port"],
+tests/test_adapter_lifecycle.py:136:                # endpoint reporting must not end emulation.
+tests/test_adapter_lifecycle.py:140:                    "heartbeat",
+tests/test_adapter_lifecycle.py:164:                        "adapter_started",
+tests/test_adapter_lifecycle.py:165:                        "candidate_started",
+tests/test_adapter_lifecycle.py:167:                        "endpoint_reported",
+tests/test_adapter_lifecycle.py:171:                heartbeat_events = [
+tests/test_adapter_lifecycle.py:174:                    if event_name == "heartbeat"
+tests/test_adapter_lifecycle.py:178:                    len(heartbeat_events),
+tests/test_adapter_lifecycle.py:180:                    "Adapter must emit at least one heartbeat before shutdown",
+tests/test_adapter_lifecycle.py:186:                        "shutdown_started",
+tests/test_adapter_lifecycle.py:192:                shutdown_index = event_names.index("shutdown_started")
+tests/test_adapter_lifecycle.py:196:                        event_name == "heartbeat"
+tests/test_adapter_lifecycle.py:199:                    "Only heartbeat events are permitted while awaiting shutdown",
+tests/test_adapter_lifecycle.py:217:                # Candidate endpoint claims are not measurements.
+tests/test_adapter_lifecycle.py:220:                    endpoint_event,
+tests/test_adapter_lifecycle.py:224:                    endpoint_event,
+tests/test_adapter_lifecycle.py:238:                "event": "adapter_started",
+tests/test_adapter_lifecycle.py:241:                "run_id": "contract-test.run-1",
+tests/test_adapter_lifecycle.py:254:                expected_run_id="contract-test.run-1",
+tests/test_adapter_lifecycle.py:259:                EventProtocolError
+veritas_core/run_coordinator.py:39:    LifecycleWatchdogError,
+veritas_core/run_coordinator.py:56:class RunCoordinatorError(RuntimeError):
+veritas_core/run_coordinator.py:67:    heartbeat_interval_seconds: int = 30
+veritas_core/run_coordinator.py:68:    heartbeat_timeout_seconds: int = 90
+veritas_core/run_coordinator.py:75:    endpoint_wait_timeout_seconds: float = 300.0
+veritas_core/run_coordinator.py:85:            raise ValueError(
+veritas_core/run_coordinator.py:90:            raise ValueError(
+veritas_core/run_coordinator.py:95:            raise ValueError(
+veritas_core/run_coordinator.py:100:            raise ValueError(
+veritas_core/run_coordinator.py:104:        if self.heartbeat_interval_seconds < 1:
+veritas_core/run_coordinator.py:105:            raise ValueError(
+veritas_core/run_coordinator.py:106:                "heartbeat_interval_seconds must be positive"
+veritas_core/run_coordinator.py:110:            self.heartbeat_timeout_seconds
+veritas_core/run_coordinator.py:111:            <= self.heartbeat_interval_seconds
+veritas_core/run_coordinator.py:113:            raise ValueError(
+veritas_core/run_coordinator.py:114:                "heartbeat_timeout_seconds must be greater "
+veritas_core/run_coordinator.py:115:                "than heartbeat_interval_seconds"
+veritas_core/run_coordinator.py:119:            raise ValueError(
+veritas_core/run_coordinator.py:124:            raise ValueError(
+veritas_core/run_coordinator.py:129:            raise ValueError(
+veritas_core/run_coordinator.py:134:            raise ValueError(
+veritas_core/run_coordinator.py:138:        if self.endpoint_wait_timeout_seconds <= 0:
+veritas_core/run_coordinator.py:139:            raise ValueError(
+veritas_core/run_coordinator.py:140:                "endpoint_wait_timeout_seconds must be positive"
+veritas_core/run_coordinator.py:144:            raise ValueError(
+veritas_core/run_coordinator.py:149:            raise ValueError(
+veritas_core/run_coordinator.py:154:            raise ValueError(
+veritas_core/run_coordinator.py:159:            raise ValueError(
+veritas_core/run_coordinator.py:187:        raise RunCoordinatorError(
+veritas_core/run_coordinator.py:292:            raise RunCoordinatorError(
+veritas_core/run_coordinator.py:302:        run_id = (
+veritas_core/run_coordinator.py:310:            self.results_root / run_id
+veritas_core/run_coordinator.py:314:            raise RunCoordinatorError(
+veritas_core/run_coordinator.py:322:        artifact_directory = contract_root / "artifacts"
+veritas_core/run_coordinator.py:327:            artifact_directory,
+veritas_core/run_coordinator.py:389:                "run_id": run_id,
+veritas_core/run_coordinator.py:411:                "heartbeat_interval_seconds": (
+veritas_core/run_coordinator.py:412:                    policy.heartbeat_interval_seconds
+veritas_core/run_coordinator.py:414:                "heartbeat_timeout_seconds": (
+veritas_core/run_coordinator.py:415:                    policy.heartbeat_timeout_seconds
+veritas_core/run_coordinator.py:439:                "artifacts": "/veritas/artifacts",
+veritas_core/run_coordinator.py:472:                "run_id": run_id,
+veritas_core/run_coordinator.py:486:        setup_error: dict[str, Any] | None = None
+veritas_core/run_coordinator.py:488:        build_started = time.monotonic()
+veritas_core/run_coordinator.py:495:                time.monotonic() - build_started,
+veritas_core/run_coordinator.py:501:                time.monotonic() - build_started,
+veritas_core/run_coordinator.py:505:            setup_error = {
+veritas_core/run_coordinator.py:507:                "error_type": type(exc).__name__,
+veritas_core/run_coordinator.py:514:                "overall_status": "setup_failed",
+veritas_core/run_coordinator.py:516:                    "status": "failed",
+veritas_core/run_coordinator.py:520:                    "error": setup_error,
+veritas_core/run_coordinator.py:602:        runtime_error: dict[str, Any] | None = None
+veritas_core/run_coordinator.py:603:        endpoint_wait_error: str | None = None
+veritas_core/run_coordinator.py:642:                    "endpoint_reported",
+veritas_core/run_coordinator.py:645:                        .endpoint_wait_timeout_seconds,
+veritas_core/run_coordinator.py:652:            except LifecycleWatchdogError as exc:
+veritas_core/run_coordinator.py:653:                endpoint_wait_error = str(exc)
+veritas_core/run_coordinator.py:660:                    != "endpoint_reported"
+veritas_core/run_coordinator.py:675:            if orchestrator.endpoint_records:
+veritas_core/run_coordinator.py:729:            runtime_error = {
+veritas_core/run_coordinator.py:731:                "error_type": type(exc).__name__,
+veritas_core/run_coordinator.py:820:            run_id=run_id,
+veritas_core/run_coordinator.py:851:                "endpoint_reported",
+veritas_core/run_coordinator.py:857:        if runtime_error is not None:
+veritas_core/run_coordinator.py:858:            overall_status = "orchestration_error"
+veritas_core/run_coordinator.py:870:            "completed_at": _utc_now(),
+veritas_core/run_coordinator.py:877:                "error": None,
+veritas_core/run_coordinator.py:881:                "runtime_error": runtime_error,
+veritas_core/run_coordinator.py:882:                "endpoint_wait_error": (
+veritas_core/run_coordinator.py:883:                    endpoint_wait_error
+veritas_core/run_coordinator.py:891:                        "was completed"
+veritas_core/run_coordinator.py:902:                            "observation was completed"
+veritas_core/run_coordinator.py:911:                            "observation was completed"
+veritas_core/run_coordinator.py:919:                        .endpoint_records
+veritas_core/run_coordinator.py:941:                            "was completed"
+veritas_core/run_coordinator.py:1006:            "artifacts": {
+veritas_core/run_coordinator.py:1014:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1018:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1022:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1026:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1030:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1034:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1038:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1042:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1046:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1050:                    "contract/artifacts/"
+veritas_core/run_coordinator.py:1054:                    "contract/artifacts/"
+tests/test_environment_janitor.py:13:    DockerBackendError,
+tests/test_environment_janitor.py:63:        source_errors={},
+tests/test_environment_janitor.py:80:            raise RuntimeError("container not found")
+tests/test_environment_janitor.py:96:        run_id = "experiment.case.adapter.attempt-1"
+tests/test_environment_janitor.py:105:                "veritas.run_id": run_id,
+tests/test_environment_janitor.py:116:                "veritas.run_id": "another-run",
+tests/test_environment_janitor.py:131:            run_id=run_id,
+tests/test_environment_janitor.py:186:            run_id="run-1",
+tests/test_environment_janitor.py:207:        run_id = "run-1"
+tests/test_environment_janitor.py:217:                "veritas.run_id": run_id,
+tests/test_environment_janitor.py:227:            run_id=run_id,
+tests/test_environment_janitor.py:239:                            "veritas.run_id": "different-run",
+tests/test_environment_janitor.py:282:            raise RuntimeError(
+tests/test_environment_janitor.py:293:        run_id = (
+tests/test_environment_janitor.py:322:                    f"veritas.run_id={run_id}",
+tests/test_environment_janitor.py:407:                run_id=run_id,
+tests/test_environment_janitor.py:419:                artifact_directory = (
+tests/test_environment_janitor.py:420:                    Path(temporary) / "artifacts"
+tests/test_environment_janitor.py:425:                        artifact_directory
+tests/test_environment_janitor.py:432:                        artifact_directory
+tests/test_environment_janitor.py:448:                DockerBackendError
+tests/test_docker_adapter_lifecycle.py:58:            "run_id": (
+tests/test_docker_adapter_lifecycle.py:68:                "endpoint-discovery"
+tests/test_docker_adapter_lifecycle.py:83:            "heartbeat_interval_seconds": 1,
+tests/test_docker_adapter_lifecycle.py:84:            "heartbeat_timeout_seconds": 3,
+tests/test_docker_adapter_lifecycle.py:99:            "artifacts": "/veritas/artifacts",
+tests/test_docker_adapter_lifecycle.py:131:            raise RuntimeError(
+tests/test_docker_adapter_lifecycle.py:158:                endpoint = supervisor.wait_for_event(
+tests/test_docker_adapter_lifecycle.py:159:                    "endpoint_reported",
+tests/test_docker_adapter_lifecycle.py:164:                    endpoint["endpoint"]["port"],
+tests/test_docker_adapter_lifecycle.py:168:                # Reporting an endpoint must not end execution.
+tests/test_docker_adapter_lifecycle.py:174:                    "heartbeat",
+tests/test_docker_adapter_lifecycle.py:229:                # Endpoint events remain candidate claims.
+tests/test_docker_adapter_lifecycle.py:230:                self.assertNotIn("verified", endpoint)
+tests/test_docker_adapter_lifecycle.py:231:                self.assertNotIn("reachable", endpoint)
+tests/test_docker_adapter_lifecycle.py:247:                    "shutdown_started",
+veritas_core/lifecycle_watchdog.py:12:    DockerSupervisorError,
+veritas_core/lifecycle_watchdog.py:15:    EventProtocolError,
+veritas_core/lifecycle_watchdog.py:21:    Operations required by the neutral lifecycle watchdog.
+veritas_core/lifecycle_watchdog.py:56:    started_at: str
+veritas_core/lifecycle_watchdog.py:57:    completed_at: str
+veritas_core/lifecycle_watchdog.py:60:    heartbeat_timeout_seconds: float
+veritas_core/lifecycle_watchdog.py:62:    heartbeats_received: int
+veritas_core/lifecycle_watchdog.py:63:    last_heartbeat_received_at: str | None
+veritas_core/lifecycle_watchdog.py:76:class LifecycleWatchdogError(RuntimeError):
+veritas_core/lifecycle_watchdog.py:77:    """Raised when watchdog operation itself fails."""
+veritas_core/lifecycle_watchdog.py:93:    while heartbeat and timeout enforcement continue.
+veritas_core/lifecycle_watchdog.py:103:            raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:115:        self.heartbeat_timeout_seconds = float(
+veritas_core/lifecycle_watchdog.py:116:            lifecycle["heartbeat_timeout_seconds"]
+veritas_core/lifecycle_watchdog.py:128:        self._thread_error: BaseException | None = None
+veritas_core/lifecycle_watchdog.py:140:            raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:141:                "Lifecycle watchdog has already been started"
+veritas_core/lifecycle_watchdog.py:153:        Signal that all planned independent measurements have completed.
+veritas_core/lifecycle_watchdog.py:171:                    raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:179:                    raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:193:            raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:194:                "Lifecycle watchdog has not been started"
+veritas_core/lifecycle_watchdog.py:198:            raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:204:        if self._thread_error is not None:
+veritas_core/lifecycle_watchdog.py:205:            raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:206:                "Lifecycle watchdog failed"
+veritas_core/lifecycle_watchdog.py:207:            ) from self._thread_error
+veritas_core/lifecycle_watchdog.py:210:            raise LifecycleWatchdogError(
+veritas_core/lifecycle_watchdog.py:272:        artifact_directory = (
+veritas_core/lifecycle_watchdog.py:273:            self.supervisor.contract_root / "artifacts"
+veritas_core/lifecycle_watchdog.py:275:        artifact_directory.mkdir(
+veritas_core/lifecycle_watchdog.py:281:            artifact_directory
+veritas_core/lifecycle_watchdog.py:300:        started_at = _utc_now()
+veritas_core/lifecycle_watchdog.py:301:        started_monotonic = time.monotonic()
+veritas_core/lifecycle_watchdog.py:303:        last_heartbeat_monotonic = started_monotonic
+veritas_core/lifecycle_watchdog.py:304:        last_heartbeat_received_at: str | None = None
+veritas_core/lifecycle_watchdog.py:305:        heartbeats_received = 0
+veritas_core/lifecycle_watchdog.py:307:        trigger = "contract_error"
+veritas_core/lifecycle_watchdog.py:311:        termination_mode = "not_started"
+veritas_core/lifecycle_watchdog.py:321:                    if event_name == "heartbeat":
+veritas_core/lifecycle_watchdog.py:322:                        heartbeats_received += 1
+veritas_core/lifecycle_watchdog.py:323:                        last_heartbeat_monotonic = now
+veritas_core/lifecycle_watchdog.py:324:                        last_heartbeat_received_at = _utc_now()
+veritas_core/lifecycle_watchdog.py:346:                        "Planned independent measurements completed"
+veritas_core/lifecycle_watchdog.py:358:                elapsed = now - started_monotonic
+veritas_core/lifecycle_watchdog.py:368:                heartbeat_age = (
+veritas_core/lifecycle_watchdog.py:369:                    now - last_heartbeat_monotonic
+veritas_core/lifecycle_watchdog.py:372:                if heartbeat_age >= self.heartbeat_timeout_seconds:
+veritas_core/lifecycle_watchdog.py:373:                    trigger = "heartbeat_lost"
+veritas_core/lifecycle_watchdog.py:375:                        "No valid adapter heartbeat was received "
+veritas_core/lifecycle_watchdog.py:376:                        "within the configured heartbeat timeout"
+veritas_core/lifecycle_watchdog.py:417:                except DockerSupervisorError:
+veritas_core/lifecycle_watchdog.py:427:                EventProtocolError,
+veritas_core/lifecycle_watchdog.py:428:                DockerSupervisorError,
+veritas_core/lifecycle_watchdog.py:447:                and final_outcome == "completed"
+veritas_core/lifecycle_watchdog.py:450:                run_outcome = "completed"
+veritas_core/lifecycle_watchdog.py:452:                    "The benchmark completed its measurements and "
+veritas_core/lifecycle_watchdog.py:457:                run_outcome = "shutdown_failed"
+veritas_core/lifecycle_watchdog.py:459:                    "Measurements completed, but the adapter did "
+veritas_core/lifecycle_watchdog.py:467:            elif trigger == "heartbeat_lost":
+veritas_core/lifecycle_watchdog.py:468:                run_outcome = "heartbeat_lost"
+veritas_core/lifecycle_watchdog.py:476:                run_outcome = "contract_error"
+veritas_core/lifecycle_watchdog.py:479:            completed_at = _utc_now()
+veritas_core/lifecycle_watchdog.py:481:                time.monotonic() - started_monotonic,
+veritas_core/lifecycle_watchdog.py:490:                started_at=started_at,
+veritas_core/lifecycle_watchdog.py:491:                completed_at=completed_at,
+veritas_core/lifecycle_watchdog.py:496:                heartbeat_timeout_seconds=(
+veritas_core/lifecycle_watchdog.py:497:                    self.heartbeat_timeout_seconds
+veritas_core/lifecycle_watchdog.py:502:                heartbeats_received=heartbeats_received,
+veritas_core/lifecycle_watchdog.py:503:                last_heartbeat_received_at=(
+veritas_core/lifecycle_watchdog.py:504:                    last_heartbeat_received_at
+veritas_core/lifecycle_watchdog.py:521:            EventProtocolError,
+veritas_core/lifecycle_watchdog.py:522:            DockerSupervisorError,
+veritas_core/lifecycle_watchdog.py:523:            OSError,
+veritas_core/lifecycle_watchdog.py:524:            ValueError,
+veritas_core/lifecycle_watchdog.py:525:            KeyError,
+veritas_core/lifecycle_watchdog.py:527:            self._thread_error = exc
+veritas_core/lifecycle_watchdog.py:535:            self._thread_error = exc
+tests/test_adapter_registry.py:9:    AdapterRegistryError,
+tests/test_adapter_registry.py:54:            with self.assertRaises(AdapterRegistryError) as context:
+tests/test_adapter_registry.py:73:            with self.assertRaises(AdapterRegistryError) as context:
+veritas_core/environment_residue.py:12:class EnvironmentProbeError(RuntimeError):
+veritas_core/environment_residue.py:85:    source_errors: dict[str, str]
+veritas_core/environment_residue.py:107:    source_errors: dict[str, str]
+veritas_core/environment_residue.py:116:    subprocess.CompletedProcess[str],
+veritas_core/environment_residue.py:130:) -> subprocess.CompletedProcess[str]:
+veritas_core/environment_residue.py:173:        raise ValueError("Malformed /proc stat document")
+veritas_core/environment_residue.py:203:        errors: dict[str, str] = {}
+veritas_core/environment_residue.py:209:            errors["qemu_processes"] = (
+veritas_core/environment_residue.py:219:            errors["tun_tap_interfaces"] = (
+veritas_core/environment_residue.py:227:            errors["loop_devices"] = (
+veritas_core/environment_residue.py:237:            errors["device_mapper_entries"] = (
+veritas_core/environment_residue.py:245:            errors["containers"] = (
+veritas_core/environment_residue.py:256:            source_errors=errors,
+veritas_core/environment_residue.py:278:                    errors="replace",
+veritas_core/environment_residue.py:292:                        errors="replace",
+veritas_core/environment_residue.py:302:                except OSError:
+veritas_core/environment_residue.py:306:                FileNotFoundError,
+veritas_core/environment_residue.py:307:                PermissionError,
+veritas_core/environment_residue.py:308:                ProcessLookupError,
+veritas_core/environment_residue.py:337:        completed = self.command_runner(
+veritas_core/environment_residue.py:341:        if completed.returncode != 0:
+veritas_core/environment_residue.py:342:            raise EnvironmentProbeError(
+veritas_core/environment_residue.py:343:                "ip link collection failed: "
+veritas_core/environment_residue.py:344:                f"{completed.stderr.strip()}"
+veritas_core/environment_residue.py:347:        document = json.loads(completed.stdout)
+veritas_core/environment_residue.py:350:            raise EnvironmentProbeError(
+veritas_core/environment_residue.py:385:                FileNotFoundError,
+veritas_core/environment_residue.py:386:                PermissionError,
+veritas_core/environment_residue.py:423:        completed = self.command_runner(
+veritas_core/environment_residue.py:433:        if completed.returncode != 0:
+veritas_core/environment_residue.py:434:            raise EnvironmentProbeError(
+veritas_core/environment_residue.py:435:                "losetup collection failed: "
+veritas_core/environment_residue.py:436:                f"{completed.stderr.strip()}"
+veritas_core/environment_residue.py:439:        document = json.loads(completed.stdout)
+veritas_core/environment_residue.py:444:            raise EnvironmentProbeError(
+veritas_core/environment_residue.py:496:        completed = self.command_runner(
+veritas_core/environment_residue.py:509:        if completed.returncode != 0:
+veritas_core/environment_residue.py:510:            stderr = completed.stderr.strip()
+veritas_core/environment_residue.py:516:            raise EnvironmentProbeError(
+veritas_core/environment_residue.py:517:                "dmsetup collection failed: "
+veritas_core/environment_residue.py:523:        for line in completed.stdout.splitlines():
+veritas_core/environment_residue.py:569:        completed = self.command_runner(
+veritas_core/environment_residue.py:581:        if completed.returncode != 0:
+veritas_core/environment_residue.py:582:            raise EnvironmentProbeError(
+veritas_core/environment_residue.py:583:                "Docker container collection failed: "
+veritas_core/environment_residue.py:584:                f"{completed.stderr.strip()}"
+veritas_core/environment_residue.py:589:        for line in completed.stdout.splitlines():
+veritas_core/environment_residue.py:751:    source_errors = {
+veritas_core/environment_residue.py:754:            for key, value in before.source_errors.items()
+veritas_core/environment_residue.py:758:            for key, value in after.source_errors.items()
+veritas_core/environment_residue.py:765:            for key in source_errors
+veritas_core/environment_residue.py:776:        status = "probe_error"
+veritas_core/environment_residue.py:781:    elif source_errors:
+veritas_core/environment_residue.py:809:        source_errors=source_errors,
+veritas_core/environment_residue.py:821:    artifact_directory = (
+veritas_core/environment_residue.py:822:        contract_root.resolve() / "artifacts"
+veritas_core/environment_residue.py:824:    artifact_directory.mkdir(
+veritas_core/environment_residue.py:836:        output_path = artifact_directory / filename
+tests/fixtures/mock_contract_adapter.py:53:    run_id = request["run"]["run_id"]
+tests/fixtures/mock_contract_adapter.py:89:                "run_id": run_id,
+tests/fixtures/mock_contract_adapter.py:104:            "adapter_started",
+tests/fixtures/mock_contract_adapter.py:109:            "candidate_started",
+tests/fixtures/mock_contract_adapter.py:123:            "endpoint_reported",
+tests/fixtures/mock_contract_adapter.py:125:            endpoint={
+tests/fixtures/mock_contract_adapter.py:132:        heartbeat_interval = max(
+tests/fixtures/mock_contract_adapter.py:136:                    "heartbeat_interval_seconds"
+tests/fixtures/mock_contract_adapter.py:141:        next_heartbeat = time.monotonic()
+tests/fixtures/mock_contract_adapter.py:146:            if current_time >= next_heartbeat:
+tests/fixtures/mock_contract_adapter.py:148:                    "heartbeat",
+tests/fixtures/mock_contract_adapter.py:151:                next_heartbeat = (
+tests/fixtures/mock_contract_adapter.py:152:                    current_time + heartbeat_interval
+tests/fixtures/mock_contract_adapter.py:158:            "shutdown_started",
+tests/fixtures/mock_contract_adapter.py:172:            outcome="completed",
+veritas_core/compute_cost.py:35:class ComputeCostError(RuntimeError):
+veritas_core/compute_cost.py:36:    """Raised when compute-cost measurement cannot be completed."""
+veritas_core/compute_cost.py:62:    started_at: str
+veritas_core/compute_cost.py:63:    completed_at: str
+veritas_core/compute_cost.py:65:    container_started_at: str | None
+veritas_core/compute_cost.py:70:    sample_errors: int
+veritas_core/compute_cost.py:85:    container_error: str | None
+veritas_core/compute_cost.py:88:    errors: tuple[str, ...]
+veritas_core/compute_cost.py:93:        document["errors"] = list(self.errors)
+veritas_core/compute_cost.py:135:        raise ValueError(
+veritas_core/compute_cost.py:151:        raise ValueError(
+veritas_core/compute_cost.py:159:        raise ValueError(
+veritas_core/compute_cost.py:170:        raise ValueError(
+veritas_core/compute_cost.py:184:        raise ValueError(
+veritas_core/compute_cost.py:265:    except ValueError:
+veritas_core/compute_cost.py:296:    except (TypeError, ValueError):
+veritas_core/compute_cost.py:358:            raise ComputeCostError(
+veritas_core/compute_cost.py:374:        self._errors: list[str] = []
+veritas_core/compute_cost.py:376:        self._thread_error: BaseException | None = None
+veritas_core/compute_cost.py:384:            raise ComputeCostError(
+veritas_core/compute_cost.py:385:                "Compute-cost sampler has already been started"
+veritas_core/compute_cost.py:403:            raise ComputeCostError(
+veritas_core/compute_cost.py:404:                "Compute-cost sampler has not been started"
+veritas_core/compute_cost.py:408:            raise ComputeCostError(
+veritas_core/compute_cost.py:414:        if self._thread_error is not None:
+veritas_core/compute_cost.py:415:            raise ComputeCostError(
+veritas_core/compute_cost.py:416:                "Compute-cost sampler failed"
+veritas_core/compute_cost.py:417:            ) from self._thread_error
+veritas_core/compute_cost.py:420:            raise ComputeCostError(
+veritas_core/compute_cost.py:437:        artifact_directory = (
+veritas_core/compute_cost.py:438:            self.contract_root / "artifacts"
+veritas_core/compute_cost.py:440:        artifact_directory.mkdir(
+veritas_core/compute_cost.py:446:            artifact_directory
+veritas_core/compute_cost.py:465:        started_at = _utc_now()
+veritas_core/compute_cost.py:466:        started_monotonic = time.monotonic()
+veritas_core/compute_cost.py:484:                self._errors.append(
+veritas_core/compute_cost.py:489:            next_sample_time = started_monotonic
+veritas_core/compute_cost.py:497:                    self._errors.append(
+veritas_core/compute_cost.py:536:                            - started_monotonic
+veritas_core/compute_cost.py:566:                    self._errors.append(
+veritas_core/compute_cost.py:587:                self._errors.append(
+veritas_core/compute_cost.py:593:            completed_at = _utc_now()
+veritas_core/compute_cost.py:595:                time.monotonic() - started_monotonic,
+veritas_core/compute_cost.py:614:            container_started_raw = state.get("StartedAt")
+veritas_core/compute_cost.py:617:            container_started = _parse_docker_timestamp(
+veritas_core/compute_cost.py:618:                container_started_raw
+veritas_core/compute_cost.py:627:                container_started is not None
+veritas_core/compute_cost.py:629:                and container_finished >= container_started
+veritas_core/compute_cost.py:634:                        - container_started
+veritas_core/compute_cost.py:641:            if sample_count > 0 and not self._errors:
+veritas_core/compute_cost.py:644:                    "Container resource sampling completed "
+veritas_core/compute_cost.py:645:                    "without measurement errors"
+veritas_core/compute_cost.py:651:                    "more measurements failed"
+veritas_core/compute_cost.py:653:            elif self._errors:
+veritas_core/compute_cost.py:654:                status = "probe_error"
+veritas_core/compute_cost.py:706:            container_error_raw = state.get("Error")
+veritas_core/compute_cost.py:707:            container_error = (
+veritas_core/compute_cost.py:708:                str(container_error_raw)
+veritas_core/compute_cost.py:709:                if container_error_raw
+veritas_core/compute_cost.py:716:                started_at=started_at,
+veritas_core/compute_cost.py:717:                completed_at=completed_at,
+veritas_core/compute_cost.py:719:                container_started_at=(
+veritas_core/compute_cost.py:720:                    str(container_started_raw)
+veritas_core/compute_cost.py:721:                    if container_started_raw
+veritas_core/compute_cost.py:736:                sample_errors=len(self._errors),
+veritas_core/compute_cost.py:803:                container_error=container_error,
+veritas_core/compute_cost.py:810:                errors=tuple(self._errors),
+veritas_core/compute_cost.py:818:            self._thread_error = exc
+tests/test_service_authenticity.py:102:def endpoint_event(port: int) -> dict[str, Any]:
+tests/test_service_authenticity.py:104:        "event": "endpoint_reported",
+tests/test_service_authenticity.py:106:        "endpoint": {
+tests/test_service_authenticity.py:139:            "run_id": (
+tests/test_service_authenticity.py:148:                "endpoint-discovery"
+tests/test_service_authenticity.py:161:            "heartbeat_interval_seconds": 1,
+tests/test_service_authenticity.py:162:            "heartbeat_timeout_seconds": 3,
+tests/test_service_authenticity.py:177:            "artifacts": "/veritas/artifacts",
+tests/test_service_authenticity.py:209:            raise RuntimeError(
+tests/test_service_authenticity.py:224:            event = endpoint_event(
+tests/test_service_authenticity.py:246:                observation.endpoint_disappeared_after_shutdown
+tests/test_service_authenticity.py:265:        event = endpoint_event(
+tests/test_service_authenticity.py:292:            observation.endpoint_disappeared_after_shutdown
+tests/test_service_authenticity.py:322:                endpoint = supervisor.wait_for_event(
+tests/test_service_authenticity.py:323:                    "endpoint_reported",
+tests/test_service_authenticity.py:327:                records = orchestrator.handle_event(endpoint)
+tests/test_service_authenticity.py:380:                    .endpoint_disappeared_after_shutdown
+veritas_core/docker_supervisor.py:13:    DockerBackendError,
+veritas_core/docker_supervisor.py:17:    EventProtocolError,
+veritas_core/docker_supervisor.py:21:class DockerSupervisorError(RuntimeError):
+veritas_core/docker_supervisor.py:58:            expected_run_id=self.request["run"]["run_id"],
+veritas_core/docker_supervisor.py:68:            raise DockerSupervisorError(
+veritas_core/docker_supervisor.py:82:        except DockerBackendError:
+veritas_core/docker_supervisor.py:101:            raise DockerSupervisorError(
+veritas_core/docker_supervisor.py:119:        except EventProtocolError:
+veritas_core/docker_supervisor.py:143:                raise DockerSupervisorError(
+veritas_core/docker_supervisor.py:151:        raise DockerSupervisorError(
+veritas_core/docker_supervisor.py:160:            raise DockerSupervisorError(
+veritas_core/docker_supervisor.py:161:                "Container has not been started"
+veritas_core/docker_supervisor.py:167:            "run_id": self.request["run"]["run_id"],
+veritas_core/docker_supervisor.py:205:        raise DockerSupervisorError(
+veritas_core/docker_supervisor.py:240:        artifact_directory = (
+veritas_core/docker_supervisor.py:241:            self.contract_root / "artifacts"
+veritas_core/docker_supervisor.py:243:        artifact_directory.mkdir(
+veritas_core/docker_supervisor.py:249:            artifact_directory / "adapter.stdout.log"
+veritas_core/docker_supervisor.py:256:            artifact_directory / "adapter.stderr.log"
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:65:    run_id = request["run"]["run_id"]
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:101:                "run_id": run_id,
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:116:            "adapter_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:121:            "candidate_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:127:                Path(request["paths"]["artifacts"])
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:148:                Path(request["paths"]["artifacts"])
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:219:            "endpoint_reported",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:221:            endpoint={
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:228:        heartbeat_interval = max(
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:232:                    "heartbeat_interval_seconds"
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:237:        next_heartbeat = time.monotonic()
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:242:            if current_time >= next_heartbeat:
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:244:                    "heartbeat",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:247:                next_heartbeat = (
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:248:                    current_time + heartbeat_interval
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:254:            "shutdown_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:269:            outcome="completed",
+veritas_core/probes/service_stability.py:13:    probe_endpoint_event,
+veritas_core/probes/service_stability.py:27:    error_type: str | None
+veritas_core/probes/service_stability.py:28:    error_message: str | None
+veritas_core/probes/service_stability.py:38:    started_at: str
+veritas_core/probes/service_stability.py:39:    completed_at: str
+veritas_core/probes/service_stability.py:41:    completed_samples: int
+veritas_core/probes/service_stability.py:43:    failed_samples: int
+veritas_core/probes/service_stability.py:59:class StabilityProbeError(RuntimeError):
+veritas_core/probes/service_stability.py:87:def measure_endpoint_stability(
+veritas_core/probes/service_stability.py:96:    Repeatedly measure a structured endpoint claim.
+veritas_core/probes/service_stability.py:98:    The candidate claim supplies only the endpoint coordinates. Each sample
+veritas_core/probes/service_stability.py:104:    if event.get("event") != "endpoint_reported":
+veritas_core/probes/service_stability.py:105:        raise StabilityProbeError(
+veritas_core/probes/service_stability.py:106:            "Stability measurement requires an endpoint_reported event"
+veritas_core/probes/service_stability.py:109:    endpoint = event.get("endpoint")
+veritas_core/probes/service_stability.py:111:    if not isinstance(endpoint, dict):
+veritas_core/probes/service_stability.py:112:        raise StabilityProbeError(
+veritas_core/probes/service_stability.py:113:            "endpoint_reported event has no endpoint object"
+veritas_core/probes/service_stability.py:117:        protocol = str(endpoint["protocol"])
+veritas_core/probes/service_stability.py:118:    except KeyError as exc:
+veritas_core/probes/service_stability.py:119:        raise StabilityProbeError(
+veritas_core/probes/service_stability.py:120:            "Endpoint claim does not contain a protocol"
+veritas_core/probes/service_stability.py:124:        raise StabilityProbeError(
+veritas_core/probes/service_stability.py:129:        raise StabilityProbeError(
+veritas_core/probes/service_stability.py:134:        raise StabilityProbeError(
+veritas_core/probes/service_stability.py:138:    started_at = _utc_now()
+veritas_core/probes/service_stability.py:141:        completed_at = _utc_now()
+veritas_core/probes/service_stability.py:146:            started_at=started_at,
+veritas_core/probes/service_stability.py:147:            completed_at=completed_at,
+veritas_core/probes/service_stability.py:149:            completed_samples=0,
+veritas_core/probes/service_stability.py:151:            failed_samples=0,
+veritas_core/probes/service_stability.py:182:            reachability = probe_endpoint_event(
+veritas_core/probes/service_stability.py:193:            error_type = reachability.error_type
+veritas_core/probes/service_stability.py:194:            error_message = reachability.error_message
+veritas_core/probes/service_stability.py:211:                    error_type = snapshot.error_type
+veritas_core/probes/service_stability.py:212:                    error_message = snapshot.error_message
+veritas_core/probes/service_stability.py:226:                    error_type=error_type,
+veritas_core/probes/service_stability.py:227:                    error_message=error_message,
+veritas_core/probes/service_stability.py:237:                    reachability_status="probe_error",
+veritas_core/probes/service_stability.py:242:                    error_type=type(exc).__name__,
+veritas_core/probes/service_stability.py:243:                    error_message=str(exc),
+veritas_core/probes/service_stability.py:249:    completed_at = _utc_now()
+veritas_core/probes/service_stability.py:251:    completed_samples = len(samples)
+veritas_core/probes/service_stability.py:255:    failed_samples = completed_samples - successful_samples
+veritas_core/probes/service_stability.py:258:        round(successful_samples / completed_samples, 6)
+veritas_core/probes/service_stability.py:259:        if completed_samples > 0
+veritas_core/probes/service_stability.py:267:    if completed_samples == 0:
+veritas_core/probes/service_stability.py:274:    elif interrupted or completed_samples < sample_count:
+veritas_core/probes/service_stability.py:278:            "observation window completed"
+veritas_core/probes/service_stability.py:282:        sample.reachability_status == "probe_error"
+veritas_core/probes/service_stability.py:285:        status = "probe_error"
+veritas_core/probes/service_stability.py:287:            "VERITAS encountered an internal error during one or "
+veritas_core/probes/service_stability.py:291:    elif failed_samples == 0:
+veritas_core/probes/service_stability.py:294:            "The endpoint responded successfully during every "
+veritas_core/probes/service_stability.py:301:            "The observation window completed, but one or more "
+veritas_core/probes/service_stability.py:308:        started_at=started_at,
+veritas_core/probes/service_stability.py:309:        completed_at=completed_at,
+veritas_core/probes/service_stability.py:311:        completed_samples=completed_samples,
+veritas_core/probes/service_stability.py:313:        failed_samples=failed_samples,
+veritas_core/probe_orchestrator.py:16:    probe_endpoint_event,
+veritas_core/probe_orchestrator.py:20:    measure_endpoint_stability,
+veritas_core/probe_orchestrator.py:25:class EndpointProbeRecord:
+veritas_core/probe_orchestrator.py:47:class EndpointStabilityRecord:
+veritas_core/probe_orchestrator.py:63:class EndpointAuthenticityRecord:
+veritas_core/probe_orchestrator.py:92:        self.endpoint_records: list[EndpointProbeRecord] = []
+veritas_core/probe_orchestrator.py:94:            EndpointStabilityRecord
+veritas_core/probe_orchestrator.py:97:            EndpointAuthenticityRecord
+veritas_core/probe_orchestrator.py:103:    ) -> list[EndpointProbeRecord]:
+veritas_core/probe_orchestrator.py:104:        if event.get("event") != "endpoint_reported":
+veritas_core/probe_orchestrator.py:107:        reachability = probe_endpoint_event(
+veritas_core/probe_orchestrator.py:122:        record = EndpointProbeRecord(
+veritas_core/probe_orchestrator.py:124:            candidate_claim=dict(event["endpoint"]),
+veritas_core/probe_orchestrator.py:129:        self.endpoint_records.append(record)
+veritas_core/probe_orchestrator.py:139:    ) -> list[EndpointStabilityRecord]:
+veritas_core/probe_orchestrator.py:142:        for endpoint_record in self.endpoint_records:
+veritas_core/probe_orchestrator.py:143:            endpoint_event = {
+veritas_core/probe_orchestrator.py:144:                "event": "endpoint_reported",
+veritas_core/probe_orchestrator.py:146:                    endpoint_record.source_event_sequence
+veritas_core/probe_orchestrator.py:148:                "endpoint": dict(
+veritas_core/probe_orchestrator.py:149:                    endpoint_record.candidate_claim
+veritas_core/probe_orchestrator.py:153:            observation = measure_endpoint_stability(
+veritas_core/probe_orchestrator.py:154:                endpoint_event,
+veritas_core/probe_orchestrator.py:161:            stability_record = EndpointStabilityRecord(
+veritas_core/probe_orchestrator.py:163:                    endpoint_record.source_event_sequence
+veritas_core/probe_orchestrator.py:166:                    endpoint_record.candidate_claim
+veritas_core/probe_orchestrator.py:181:    ) -> list[EndpointAuthenticityRecord]:
+veritas_core/probe_orchestrator.py:185:        Call only after the adapter has completed graceful shutdown or has
+veritas_core/probe_orchestrator.py:190:        for record in self.endpoint_records:
+veritas_core/probe_orchestrator.py:194:            endpoint_event = {
+veritas_core/probe_orchestrator.py:195:                "event": "endpoint_reported",
+veritas_core/probe_orchestrator.py:197:                "endpoint": dict(record.candidate_claim),
+veritas_core/probe_orchestrator.py:201:                endpoint_event,
+veritas_core/probe_orchestrator.py:211:            authenticity_record = EndpointAuthenticityRecord(
+tests/test_unpack_validation.py:18:        / "artifacts"
+tests/test_unpack_validation.py:114:                    / "artifacts"
+tests/test_unpack_validation.py:157:                / "artifacts"
+veritas_core/probes/service_authenticity.py:20:    endpoint_disappeared_after_shutdown: bool | None
+veritas_core/probes/service_authenticity.py:45:    artifact analysis, never from an adapter claim.
+veritas_core/probes/service_authenticity.py:59:            reason="Endpoint protocol is not HTTP or HTTPS",
+veritas_core/probes/service_authenticity.py:61:            endpoint_disappeared_after_shutdown=None,
+veritas_core/probes/service_authenticity.py:76:            endpoint_disappeared_after_shutdown=None,
+veritas_core/probes/service_authenticity.py:80:    if post_shutdown_snapshot.status == "probe_error":
+veritas_core/probes/service_authenticity.py:83:            status="probe_error",
+veritas_core/probes/service_authenticity.py:88:                "endpoint measurement"
+veritas_core/probes/service_authenticity.py:91:            endpoint_disappeared_after_shutdown=None,
+veritas_core/probes/service_authenticity.py:110:                "The endpoint remained reachable after candidate "
+veritas_core/probes/service_authenticity.py:115:            endpoint_disappeared_after_shutdown=False,
+veritas_core/probes/service_authenticity.py:134:                endpoint_disappeared_after_shutdown=True,
+veritas_core/probes/service_authenticity.py:144:                "The endpoint disappeared after shutdown, but its "
+veritas_core/probes/service_authenticity.py:149:            endpoint_disappeared_after_shutdown=True,
+veritas_core/probes/service_authenticity.py:155:        status="probe_error",
+veritas_core/probes/service_authenticity.py:163:        endpoint_disappeared_after_shutdown=None,
+tests/fixtures/docker-probe-adapters/mock-service-adapter/adapter.yaml:29:  - endpoint-discovery
+tests/fixtures/docker-probe-adapters/mock-service-adapter/adapter.yaml:32:  endpoint_protocols:
+veritas_core/environment_janitor.py:28:class EnvironmentJanitorError(RuntimeError):
+veritas_core/environment_janitor.py:51:    error_type: str | None
+veritas_core/environment_janitor.py:52:    error_message: str | None
+veritas_core/environment_janitor.py:61:    run_id: str
+veritas_core/environment_janitor.py:77:    run_id: str
+veritas_core/environment_janitor.py:79:    started_at: str
+veritas_core/environment_janitor.py:80:    completed_at: str
+veritas_core/environment_janitor.py:85:    failed_actions: int
+veritas_core/environment_janitor.py:108:    run_id: str,
+veritas_core/environment_janitor.py:112:        and labels.get("veritas.run_id") == run_id
+veritas_core/environment_janitor.py:118:    run_id: str,
+veritas_core/environment_janitor.py:127:    if not run_id:
+veritas_core/environment_janitor.py:128:        raise EnvironmentJanitorError(
+veritas_core/environment_janitor.py:129:            "run_id must not be empty"
+veritas_core/environment_janitor.py:137:            run_id,
+veritas_core/environment_janitor.py:235:        run_id=run_id,
+veritas_core/environment_janitor.py:261:        started_at = _utc_now()
+veritas_core/environment_janitor.py:278:                        error_type=None,
+veritas_core/environment_janitor.py:279:                        error_message=None,
+veritas_core/environment_janitor.py:301:                        error_type=None,
+veritas_core/environment_janitor.py:302:                        error_message=None,
+veritas_core/environment_janitor.py:325:                        error_type=type(exc).__name__,
+veritas_core/environment_janitor.py:326:                        error_message=str(exc),
+veritas_core/environment_janitor.py:361:                        error_type=None,
+veritas_core/environment_janitor.py:362:                        error_message=None,
+veritas_core/environment_janitor.py:369:                plan.run_id,
+veritas_core/environment_janitor.py:381:                        error_type=None,
+veritas_core/environment_janitor.py:382:                        error_message=None,
+veritas_core/environment_janitor.py:402:                        error_type=None,
+veritas_core/environment_janitor.py:403:                        error_message=None,
+veritas_core/environment_janitor.py:413:                        status="failed",
+veritas_core/environment_janitor.py:415:                            "Container removal failed after "
+veritas_core/environment_janitor.py:418:                        error_type=type(exc).__name__,
+veritas_core/environment_janitor.py:419:                        error_message=str(exc),
+veritas_core/environment_janitor.py:435:        failed = sum(
+veritas_core/environment_janitor.py:436:            result.status == "failed"
+veritas_core/environment_janitor.py:440:        if failed > 0:
+veritas_core/environment_janitor.py:444:                "failed"
+veritas_core/environment_janitor.py:449:                "Ownership-safe remediation completed, but one "
+veritas_core/environment_janitor.py:472:            run_id=plan.run_id,
+veritas_core/environment_janitor.py:474:            started_at=started_at,
+veritas_core/environment_janitor.py:475:            completed_at=_utc_now(),
+veritas_core/environment_janitor.py:480:            failed_actions=failed,
+veritas_core/environment_janitor.py:498:        artifact_directory = (
+veritas_core/environment_janitor.py:499:            self.contract_root / "artifacts"
+veritas_core/environment_janitor.py:501:        artifact_directory.mkdir(
+veritas_core/environment_janitor.py:514:            output_path = artifact_directory / filename
+tests/test_compute_cost.py:76:            "run_id": (
+tests/test_compute_cost.py:85:                "endpoint-discovery"
+tests/test_compute_cost.py:100:            "heartbeat_interval_seconds": 1,
+tests/test_compute_cost.py:101:            "heartbeat_timeout_seconds": 3,
+tests/test_compute_cost.py:116:            "artifacts": "/veritas/artifacts",
+tests/test_compute_cost.py:224:            raise RuntimeError(
+tests/test_compute_cost.py:269:                    "endpoint_reported",
+tests/test_compute_cost.py:274:                    "heartbeat",
+tests/test_compute_cost.py:289:                    "completed",
+tests/test_compute_cost.py:339:                    / "artifacts"
+veritas_core/probes/boot_validation.py:12:class BootValidationError(RuntimeError):
+veritas_core/probes/boot_validation.py:27:    errors: tuple[str, ...]
+veritas_core/probes/boot_validation.py:40:        document["errors"] = list(self.errors)
+veritas_core/probes/boot_validation.py:111:            r"init started:\s*BusyBox",
+veritas_core/probes/boot_validation.py:158:            r"Failed to execute\s+/(?:sbin/)?init",
+veritas_core/probes/boot_validation.py:199:        raise BootValidationError(
+veritas_core/probes/boot_validation.py:205:        / "artifacts"
+veritas_core/probes/boot_validation.py:221:            errors=(),
+veritas_core/probes/boot_validation.py:235:            errors=(
+veritas_core/probes/boot_validation.py:242:    errors: list[str] = []
+veritas_core/probes/boot_validation.py:264:    except OSError as exc:
+veritas_core/probes/boot_validation.py:265:        errors.append(
+veritas_core/probes/boot_validation.py:279:            errors=tuple(errors),
+veritas_core/probes/boot_validation.py:284:        errors="replace",
+veritas_core/probes/boot_validation.py:306:        errors=tuple(errors),
+veritas_core/probes/boot_validation.py:414:    if console.errors:
+veritas_core/probes/boot_validation.py:417:            status="probe_error",
+veritas_core/probes/boot_validation.py:555:        / "artifacts"
+tests/fixtures/mock_service_adapter.py:65:    run_id = request["run"]["run_id"]
+tests/fixtures/mock_service_adapter.py:101:                "run_id": run_id,
+tests/fixtures/mock_service_adapter.py:116:            "adapter_started",
+tests/fixtures/mock_service_adapter.py:121:            "candidate_started",
+tests/fixtures/mock_service_adapter.py:127:                Path(request["paths"]["artifacts"])
+tests/fixtures/mock_service_adapter.py:148:                Path(request["paths"]["artifacts"])
+tests/fixtures/mock_service_adapter.py:219:            "endpoint_reported",
+tests/fixtures/mock_service_adapter.py:221:            endpoint={
+tests/fixtures/mock_service_adapter.py:228:        heartbeat_interval = max(
+tests/fixtures/mock_service_adapter.py:232:                    "heartbeat_interval_seconds"
+tests/fixtures/mock_service_adapter.py:237:        next_heartbeat = time.monotonic()
+tests/fixtures/mock_service_adapter.py:242:            if current_time >= next_heartbeat:
+tests/fixtures/mock_service_adapter.py:244:                    "heartbeat",
+tests/fixtures/mock_service_adapter.py:247:                next_heartbeat = (
+tests/fixtures/mock_service_adapter.py:248:                    current_time + heartbeat_interval
+tests/fixtures/mock_service_adapter.py:254:            "shutdown_started",
+tests/fixtures/mock_service_adapter.py:269:            outcome="completed",
+tests/test_service_stability.py:23:    measure_endpoint_stability,
+tests/test_service_stability.py:74:            "run_id": (
+tests/test_service_stability.py:83:                "endpoint-discovery"
+tests/test_service_stability.py:98:            "heartbeat_interval_seconds": 1,
+tests/test_service_stability.py:99:            "heartbeat_timeout_seconds": 3,
+tests/test_service_stability.py:114:            "artifacts": "/veritas/artifacts",
+tests/test_service_stability.py:146:        error_type=None if status == "true" else "ConnectionRefusedError",
+tests/test_service_stability.py:147:        error_message=None if status == "true" else "refused",
+tests/test_service_stability.py:163:            raise RuntimeError(
+tests/test_service_stability.py:194:                endpoint = supervisor.wait_for_event(
+tests/test_service_stability.py:195:                    "endpoint_reported",
+tests/test_service_stability.py:199:                orchestrator.handle_event(endpoint)
+tests/test_service_stability.py:222:                    observation.completed_samples,
+tests/test_service_stability.py:232:                    observation.failed_samples,
+tests/test_service_stability.py:260:            "event": "endpoint_reported",
+tests/test_service_stability.py:262:            "endpoint": {
+tests/test_service_stability.py:277:            "probe_endpoint_event",
+tests/test_service_stability.py:280:            result = measure_endpoint_stability(
+tests/test_service_stability.py:289:        self.assertEqual(result.failed_samples, 1)
+tests/test_service_stability.py:303:            "event": "endpoint_reported",
+tests/test_service_stability.py:305:            "endpoint": {
+tests/test_service_stability.py:324:            "probe_endpoint_event",
+tests/test_service_stability.py:327:            result = measure_endpoint_stability(
+tests/test_service_stability.py:341:            result.completed_samples,
+tests/test_service_stability.py:346:            result.completed_samples,
+veritas_core/event_protocol.py:10:class EventProtocolError(RuntimeError):
+veritas_core/event_protocol.py:14:def _format_error_location(error: Any) -> str:
+veritas_core/event_protocol.py:16:        str(part) for part in error.absolute_path
+veritas_core/event_protocol.py:32:        expected_run_id: str,
+veritas_core/event_protocol.py:36:        self.expected_run_id = expected_run_id
+veritas_core/event_protocol.py:43:        except FileNotFoundError as exc:
+veritas_core/event_protocol.py:44:            raise EventProtocolError(
+veritas_core/event_protocol.py:47:        except json.JSONDecodeError as exc:
+veritas_core/event_protocol.py:48:            raise EventProtocolError(
+veritas_core/event_protocol.py:61:        self._adapter_started = False
+veritas_core/event_protocol.py:69:        errors = sorted(
+veritas_core/event_protocol.py:70:            self._validator.iter_errors(document),
+veritas_core/event_protocol.py:71:            key=lambda error: list(error.absolute_path),
+veritas_core/event_protocol.py:74:        if errors:
+veritas_core/event_protocol.py:76:                f"{_format_error_location(error)}: {error.message}"
+veritas_core/event_protocol.py:77:                for error in errors
+veritas_core/event_protocol.py:79:            raise EventProtocolError(
+veritas_core/event_protocol.py:84:        if document["run_id"] != self.expected_run_id:
+veritas_core/event_protocol.py:85:            raise EventProtocolError(
+veritas_core/event_protocol.py:86:                f"Event run_id mismatch: expected "
+veritas_core/event_protocol.py:87:                f"{self.expected_run_id!r}, received "
+veritas_core/event_protocol.py:88:                f"{document['run_id']!r}"
+veritas_core/event_protocol.py:92:            raise EventProtocolError(
+veritas_core/event_protocol.py:99:            raise EventProtocolError(
+veritas_core/event_protocol.py:108:            raise EventProtocolError(
+veritas_core/event_protocol.py:112:        if not self._adapter_started:
+veritas_core/event_protocol.py:113:            if event_name != "adapter_started":
+veritas_core/event_protocol.py:114:                raise EventProtocolError(
+veritas_core/event_protocol.py:115:                    "The first event must be adapter_started"
+veritas_core/event_protocol.py:117:            self._adapter_started = True
+veritas_core/event_protocol.py:119:        elif event_name == "adapter_started":
+veritas_core/event_protocol.py:120:            raise EventProtocolError(
+veritas_core/event_protocol.py:121:                "adapter_started may be emitted only once"
+veritas_core/event_protocol.py:125:            "endpoint": "endpoint_reported",
+veritas_core/event_protocol.py:126:            "error": "error",
+veritas_core/event_protocol.py:135:                raise EventProtocolError(
+veritas_core/event_protocol.py:149:        A partially written final line is left unread until it is completed.
+veritas_core/event_protocol.py:175:                except UnicodeDecodeError as exc:
+veritas_core/event_protocol.py:176:                    raise EventProtocolError(
+veritas_core/event_protocol.py:182:                except json.JSONDecodeError as exc:
+veritas_core/event_protocol.py:183:                    raise EventProtocolError(
+veritas_core/event_protocol.py:189:                    raise EventProtocolError(
+veritas_core/probes/service_reachability.py:25:    distinguish false, not attempted, not applicable and probe error.
+veritas_core/probes/service_reachability.py:36:    error_type: str | None
+veritas_core/probes/service_reachability.py:37:    error_message: str | None
+veritas_core/probes/service_reachability.py:43:class ReachabilityProbeError(RuntimeError):
+veritas_core/probes/service_reachability.py:55:def probe_endpoint_event(
+veritas_core/probes/service_reachability.py:63:    Independently test a structured endpoint claim.
+veritas_core/probes/service_reachability.py:68:    if event.get("event") != "endpoint_reported":
+veritas_core/probes/service_reachability.py:69:        raise ReachabilityProbeError(
+veritas_core/probes/service_reachability.py:70:            "Reachability probe requires an endpoint_reported event"
+veritas_core/probes/service_reachability.py:73:    endpoint = event.get("endpoint")
+veritas_core/probes/service_reachability.py:75:    if not isinstance(endpoint, dict):
+veritas_core/probes/service_reachability.py:76:        raise ReachabilityProbeError(
+veritas_core/probes/service_reachability.py:77:            "endpoint_reported event contains no endpoint object"
+veritas_core/probes/service_reachability.py:81:        host = str(endpoint["host"])
+veritas_core/probes/service_reachability.py:82:        port = int(endpoint["port"])
+veritas_core/probes/service_reachability.py:83:        protocol = str(endpoint["protocol"])
+veritas_core/probes/service_reachability.py:84:    except (KeyError, TypeError, ValueError) as exc:
+veritas_core/probes/service_reachability.py:85:        raise ReachabilityProbeError(
+veritas_core/probes/service_reachability.py:86:            "Endpoint claim is incomplete or malformed"
+veritas_core/probes/service_reachability.py:90:        raise ReachabilityProbeError(
+veritas_core/probes/service_reachability.py:91:            "Endpoint host must not be empty"
+veritas_core/probes/service_reachability.py:95:        raise ReachabilityProbeError(
+veritas_core/probes/service_reachability.py:96:            f"Endpoint port is outside the valid range: {port}"
+veritas_core/probes/service_reachability.py:100:        raise ReachabilityProbeError(
+veritas_core/probes/service_reachability.py:114:            error_type=None,
+veritas_core/probes/service_reachability.py:115:            error_message=(
+veritas_core/probes/service_reachability.py:121:    final_exception: OSError | None = None
+veritas_core/probes/service_reachability.py:124:        started = time.monotonic()
+veritas_core/probes/service_reachability.py:132:                    (time.monotonic() - started) * 1000,
+veritas_core/probes/service_reachability.py:145:                    error_type=None,
+veritas_core/probes/service_reachability.py:146:                    error_message=None,
+veritas_core/probes/service_reachability.py:149:        except OSError as exc:
+veritas_core/probes/service_reachability.py:164:        error_type=(
+veritas_core/probes/service_reachability.py:169:        error_message=(
+tests/fixtures/adapters/mock-adapter/adapter.yaml:34:    - endpoint-discovery
+tests/fixtures/adapters/mock-adapter/adapter.yaml:37:  endpoint_protocols:
+tests/test_end_to_end_coordinator.py:18:    RunCoordinatorError,
+tests/test_end_to_end_coordinator.py:68:            raise RuntimeError(
+tests/test_end_to_end_coordinator.py:102:                    "endpoint-discovery",
+tests/test_end_to_end_coordinator.py:105:                heartbeat_interval_seconds=1,
+tests/test_end_to_end_coordinator.py:106:                heartbeat_timeout_seconds=3,
+tests/test_end_to_end_coordinator.py:111:                endpoint_wait_timeout_seconds=10,
+tests/test_end_to_end_coordinator.py:138:                "completed",
+tests/test_end_to_end_coordinator.py:277:                "endpoint_reported",
+tests/test_end_to_end_coordinator.py:352:                saved_result["run"]["run_id"],
+tests/test_end_to_end_coordinator.py:353:                result["run"]["run_id"],
+tests/test_end_to_end_coordinator.py:359:                RunCoordinatorError
+veritas_core/probes/unpack_validation.py:13:class UnpackValidationError(RuntimeError):
+veritas_core/probes/unpack_validation.py:35:    errors: tuple[str, ...]
+veritas_core/probes/unpack_validation.py:43:        document["errors"] = list(self.errors)
+veritas_core/probes/unpack_validation.py:188:        raise UnpackValidationError(
+veritas_core/probes/unpack_validation.py:193:        raise UnpackValidationError(
+veritas_core/probes/unpack_validation.py:199:        / "artifacts"
+veritas_core/probes/unpack_validation.py:222:            errors=(),
+veritas_core/probes/unpack_validation.py:246:            errors=(),
+veritas_core/probes/unpack_validation.py:271:            errors=(),
+veritas_core/probes/unpack_validation.py:279:    errors: list[str] = []
+veritas_core/probes/unpack_validation.py:300:            except OSError as exc:
+veritas_core/probes/unpack_validation.py:301:                errors.append(
+veritas_core/probes/unpack_validation.py:309:                    errors.append(
+veritas_core/probes/unpack_validation.py:328:                except OSError as exc:
+veritas_core/probes/unpack_validation.py:329:                    errors.append(
+veritas_core/probes/unpack_validation.py:383:                    except OSError as exc:
+veritas_core/probes/unpack_validation.py:384:                        errors.append(
+veritas_core/probes/unpack_validation.py:394:                    except OSError as exc:
+veritas_core/probes/unpack_validation.py:396:                        errors.append(
+veritas_core/probes/unpack_validation.py:429:            status="probe_error",
+veritas_core/probes/unpack_validation.py:444:            errors=(
+veritas_core/probes/unpack_validation.py:448:                "VERITAS encountered an unexpected error while "
+veritas_core/probes/unpack_validation.py:473:    inventory_complete = not errors
+veritas_core/probes/unpack_validation.py:475:    if errors:
+veritas_core/probes/unpack_validation.py:497:        failed_conditions: list[str] = []
+veritas_core/probes/unpack_validation.py:500:            failed_conditions.append(
+veritas_core/probes/unpack_validation.py:505:            failed_conditions.append(
+veritas_core/probes/unpack_validation.py:510:            failed_conditions.append(
+veritas_core/probes/unpack_validation.py:515:            "The exported tree failed independent validation: "
+veritas_core/probes/unpack_validation.py:516:            + ", ".join(failed_conditions)
+veritas_core/probes/unpack_validation.py:536:        errors=tuple(errors),
+veritas_core/probes/unpack_validation.py:548:        / "artifacts"
+veritas_core/probes/http_snapshot.py:37:    error_type: str | None
+veritas_core/probes/http_snapshot.py:38:    error_message: str | None
+veritas_core/probes/http_snapshot.py:44:class HttpSnapshotError(RuntimeError):
+veritas_core/probes/http_snapshot.py:45:    """Raised when an endpoint claim is malformed."""
+veritas_core/probes/http_snapshot.py:69:    if event.get("event") != "endpoint_reported":
+veritas_core/probes/http_snapshot.py:70:        raise HttpSnapshotError(
+veritas_core/probes/http_snapshot.py:71:            "HTTP snapshot requires an endpoint_reported event"
+veritas_core/probes/http_snapshot.py:74:    endpoint = event.get("endpoint")
+veritas_core/probes/http_snapshot.py:76:    if not isinstance(endpoint, dict):
+veritas_core/probes/http_snapshot.py:77:        raise HttpSnapshotError(
+veritas_core/probes/http_snapshot.py:78:            "endpoint_reported event has no endpoint object"
+veritas_core/probes/http_snapshot.py:82:        host = str(endpoint["host"])
+veritas_core/probes/http_snapshot.py:83:        port = int(endpoint["port"])
+veritas_core/probes/http_snapshot.py:84:        protocol = str(endpoint["protocol"])
+veritas_core/probes/http_snapshot.py:85:    except (KeyError, TypeError, ValueError) as exc:
+veritas_core/probes/http_snapshot.py:86:        raise HttpSnapshotError(
+veritas_core/probes/http_snapshot.py:87:            "Endpoint claim is incomplete or malformed"
+veritas_core/probes/http_snapshot.py:108:            error_type=None,
+veritas_core/probes/http_snapshot.py:109:            error_message=(
+veritas_core/probes/http_snapshot.py:134:    started = time.monotonic()
+veritas_core/probes/http_snapshot.py:154:            (time.monotonic() - started) * 1000,
+veritas_core/probes/http_snapshot.py:197:            error_type=None,
+veritas_core/probes/http_snapshot.py:198:            error_message=None,
+veritas_core/probes/http_snapshot.py:202:        ConnectionRefusedError,
+veritas_core/probes/http_snapshot.py:203:        ConnectionResetError,
+veritas_core/probes/http_snapshot.py:204:        TimeoutError,
+veritas_core/probes/http_snapshot.py:206:        socket.gaierror,
+veritas_core/probes/http_snapshot.py:207:        ssl.SSLError,
+veritas_core/probes/http_snapshot.py:208:        OSError,
+veritas_core/probes/http_snapshot.py:225:            error_type=type(exc).__name__,
+veritas_core/probes/http_snapshot.py:226:            error_message=str(exc),
+veritas_core/probes/http_snapshot.py:231:            status="probe_error",
+veritas_core/probes/http_snapshot.py:245:            error_type=type(exc).__name__,
+veritas_core/probes/http_snapshot.py:246:            error_message=str(exc),
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:53:    run_id = request["run"]["run_id"]
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:89:                "run_id": run_id,
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:104:            "adapter_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:109:            "candidate_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:123:            "endpoint_reported",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:125:            endpoint={
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:132:        heartbeat_interval = max(
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:136:                    "heartbeat_interval_seconds"
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:141:        next_heartbeat = time.monotonic()
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:146:            if current_time >= next_heartbeat:
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:148:                    "heartbeat",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:151:                next_heartbeat = (
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:152:                    current_time + heartbeat_interval
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:158:            "shutdown_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:172:            outcome="completed",
+veritas_core/docker_backend.py:17:class DockerBackendError(RuntimeError):
+veritas_core/docker_backend.py:21:class RuntimeRequirementError(DockerBackendError):
+veritas_core/docker_backend.py:82:        except FileNotFoundError as exc:
+veritas_core/docker_backend.py:83:            raise DockerBackendError(
+veritas_core/docker_backend.py:87:        except json.JSONDecodeError as exc:
+veritas_core/docker_backend.py:88:            raise DockerBackendError(
+veritas_core/docker_backend.py:105:    ) -> subprocess.CompletedProcess[str]:
+veritas_core/docker_backend.py:107:            completed = subprocess.run(
+veritas_core/docker_backend.py:115:        except FileNotFoundError as exc:
+veritas_core/docker_backend.py:116:            raise DockerBackendError(
+veritas_core/docker_backend.py:120:            raise DockerBackendError(
+veritas_core/docker_backend.py:125:        if check and completed.returncode != 0:
+veritas_core/docker_backend.py:126:            raise DockerBackendError(
+veritas_core/docker_backend.py:127:                f"Docker command failed with code "
+veritas_core/docker_backend.py:128:                f"{completed.returncode}:\n"
+veritas_core/docker_backend.py:130:                f"stdout:\n{completed.stdout}\n"
+veritas_core/docker_backend.py:131:                f"stderr:\n{completed.stderr}"
+veritas_core/docker_backend.py:134:        return completed
+veritas_core/docker_backend.py:137:        completed = self._run(
+veritas_core/docker_backend.py:142:        return completed.returncode == 0
+veritas_core/docker_backend.py:183:            raise DockerBackendError(
+veritas_core/docker_backend.py:205:        completed = self._run(
+veritas_core/docker_backend.py:210:            documents = json.loads(completed.stdout)
+veritas_core/docker_backend.py:211:        except json.JSONDecodeError as exc:
+veritas_core/docker_backend.py:212:            raise DockerBackendError(
+veritas_core/docker_backend.py:221:            raise DockerBackendError(
+veritas_core/docker_backend.py:236:        except FileNotFoundError as exc:
+veritas_core/docker_backend.py:237:            raise DockerBackendError(
+veritas_core/docker_backend.py:240:        except json.JSONDecodeError as exc:
+veritas_core/docker_backend.py:241:            raise DockerBackendError(
+veritas_core/docker_backend.py:245:        errors = sorted(
+veritas_core/docker_backend.py:246:            self._request_validator.iter_errors(request),
+veritas_core/docker_backend.py:247:            key=lambda error: list(error.absolute_path),
+veritas_core/docker_backend.py:250:        if errors:
+veritas_core/docker_backend.py:253:            for error in errors:
+veritas_core/docker_backend.py:256:                    for part in error.absolute_path
+veritas_core/docker_backend.py:259:                    f"{location or '<root>'}: {error.message}"
+veritas_core/docker_backend.py:262:            raise DockerBackendError(
+veritas_core/docker_backend.py:263:                "Run-request validation failed:\n  - "
+veritas_core/docker_backend.py:268:            raise DockerBackendError(
+veritas_core/docker_backend.py:286:            raise DockerBackendError(
+veritas_core/docker_backend.py:298:            raise DockerBackendError(
+veritas_core/docker_backend.py:307:            raise DockerBackendError(
+veritas_core/docker_backend.py:315:            raise DockerBackendError(
+veritas_core/docker_backend.py:323:            raise DockerBackendError(
+veritas_core/docker_backend.py:332:            raise DockerBackendError(
+veritas_core/docker_backend.py:338:            raise DockerBackendError(
+veritas_core/docker_backend.py:347:            raise RuntimeRequirementError(
+veritas_core/docker_backend.py:402:                    except FileNotFoundError:
+veritas_core/docker_backend.py:409:                    raise RuntimeRequirementError(
+veritas_core/docker_backend.py:419:                raise RuntimeRequirementError(
+veritas_core/docker_backend.py:426:                raise RuntimeRequirementError(
+veritas_core/docker_backend.py:450:        artifacts_directory = contract_root / "artifacts"
+veritas_core/docker_backend.py:456:            artifacts_directory,
+veritas_core/docker_backend.py:462:        run_id = request["run"]["run_id"]
+veritas_core/docker_backend.py:464:            run_id.encode("utf-8")
+veritas_core/docker_backend.py:488:            f"veritas.run_id={run_id}",
+veritas_core/docker_backend.py:519:                f"type=bind,src={artifacts_directory},"
+veritas_core/docker_backend.py:520:                "dst=/veritas/artifacts"
+veritas_core/docker_backend.py:541:            raise RuntimeRequirementError(
+veritas_core/docker_backend.py:546:            raise RuntimeRequirementError(
+veritas_core/docker_backend.py:571:        completed = self._run(arguments)
+veritas_core/docker_backend.py:573:        container_id = completed.stdout.strip()
+veritas_core/docker_backend.py:576:            raise DockerBackendError(
+veritas_core/docker_backend.py:595:        completed = self._run(
+veritas_core/docker_backend.py:600:            documents = json.loads(completed.stdout)
+veritas_core/docker_backend.py:601:        except json.JSONDecodeError as exc:
+veritas_core/docker_backend.py:602:            raise DockerBackendError(
+veritas_core/docker_backend.py:611:            raise DockerBackendError(
+veritas_core/docker_backend.py:652:        completed = self._run(
+veritas_core/docker_backend.py:665:        if completed.returncode != 0:
+veritas_core/docker_backend.py:666:            raise DockerBackendError(
+veritas_core/docker_backend.py:668:                f"{container_id}:\n{completed.stderr}"
+veritas_core/docker_backend.py:673:            for line in completed.stdout.splitlines()
+veritas_core/docker_backend.py:678:            raise DockerBackendError(
+veritas_core/docker_backend.py:685:        except json.JSONDecodeError as exc:
+veritas_core/docker_backend.py:686:            raise DockerBackendError(
+veritas_core/docker_backend.py:691:            raise DockerBackendError(
+veritas_core/docker_backend.py:708:        completed = self._run(
+veritas_core/docker_backend.py:713:        return completed.stdout, completed.stderr
+tests/fixtures/docker-adapters/mock-docker-adapter/adapter.yaml:34:    - endpoint-discovery
+tests/fixtures/docker-adapters/mock-docker-adapter/adapter.yaml:37:  endpoint_protocols:
