@@ -1,0 +1,9 @@
+51e75470b6b82a7843010d62d4a33004b2ea1c5aeee174f6dfde2d8f4145866d  /opt/veritas-adapter/provenance/ubuntu-snapshot.txt
+d72a0b1c7c027e988220cc2b56eb54c07e022dc0d1caab269a3751006a635247  /opt/veritas-adapter/provenance/apt-sources.list
+feed437c9259cc2c9f68767442090812533aefec68731c2bc2231d4e35f499e7  /opt/veritas-adapter/provenance/apt-snapshot.conf
+4876529083d1fad41763fb16d253232f6202b512de8c70a53bd6d845ea1de1ec  /opt/veritas-adapter/provenance/apt-direct.txt
+9b1d6d18f5da5518a353b9c370ce1d70deac654c345bc0927481ca3dc610b28a  /opt/veritas-adapter/provenance/base-snapshot-compatibility.tsv
+a9d6243857e873f4c87578af6e70cd886113186856d227bf6cfbaf0d39838794  /opt/veritas-adapter/provenance/apt-direct-lock.tsv
+96619bbc1da857fd48bbf717ffb472b2e89eef88b6a875ffb084afb56537d7c1  /opt/veritas-adapter/provenance/apt-installed-lock.tsv
+6d9bb2d643b23d10feefe9b9d82ab155088000cd460b7d0441bd027ecfbb222f  /opt/veritas-adapter/provenance/apt-manual-packages.txt
+cbd8fc79d959a2fe61b1703a8e7ba36f1196eed5282cbb3c0942c59309f7578f  /opt/veritas-adapter/provenance/ca-bootstrap.txt

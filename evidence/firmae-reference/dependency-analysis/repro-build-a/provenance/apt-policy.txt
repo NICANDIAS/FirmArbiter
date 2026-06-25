@@ -1,0 +1,46 @@
+Package files:
+ 100 /var/lib/dpkg/status
+     release a=now
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-security/multiverse amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-security,n=jammy,l=Ubuntu,c=multiverse,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-security/restricted amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-security,n=jammy,l=Ubuntu,c=restricted,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-security/universe amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-security,n=jammy,l=Ubuntu,c=universe,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-security/main amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-security,n=jammy,l=Ubuntu,c=main,b=amd64
+     origin snapshot.ubuntu.com
+ 100 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-backports/universe amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-backports,n=jammy,l=Ubuntu,c=universe,b=amd64
+     origin snapshot.ubuntu.com
+ 100 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-backports/main amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-backports,n=jammy,l=Ubuntu,c=main,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-updates/multiverse amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-updates,n=jammy,l=Ubuntu,c=multiverse,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-updates/restricted amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-updates,n=jammy,l=Ubuntu,c=restricted,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-updates/universe amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-updates,n=jammy,l=Ubuntu,c=universe,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy-updates/main amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy-updates,n=jammy,l=Ubuntu,c=main,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy/multiverse amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy,n=jammy,l=Ubuntu,c=multiverse,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy/restricted amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy,n=jammy,l=Ubuntu,c=restricted,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy/universe amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy,n=jammy,l=Ubuntu,c=universe,b=amd64
+     origin snapshot.ubuntu.com
+ 500 https://snapshot.ubuntu.com/ubuntu/20260615T120000Z jammy/main amd64 Packages
+     release v=22.04,o=Ubuntu,a=jammy,n=jammy,l=Ubuntu,c=main,b=amd64
+     origin snapshot.ubuntu.com
+Pinned packages:

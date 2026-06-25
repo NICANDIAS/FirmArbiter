@@ -1,0 +1,4 @@
+deb [snapshot=yes] http://archive.ubuntu.com/ubuntu jammy main universe restricted multiverse
+deb [snapshot=yes] http://archive.ubuntu.com/ubuntu jammy-updates main universe restricted multiverse
+deb [snapshot=yes] http://archive.ubuntu.com/ubuntu jammy-backports main universe restricted multiverse
+deb [snapshot=yes] http://security.ubuntu.com/ubuntu jammy-security main universe restricted multiverse
