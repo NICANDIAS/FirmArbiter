@@ -76,6 +76,12 @@ RUN chmod 0755 \
     && sha256sum "${FIRMAE_HOME}/database/schema" \
         > /opt/veritas-adapter/provenance/firmae-database-schema.sha256
 
+COPY scripts/unpack_firmware.py \
+    /usr/local/bin/veritas-firmae-unpack
+
+RUN chmod 0755 \
+        /usr/local/bin/veritas-firmae-unpack
+
 COPY entrypoint.py     /opt/veritas-adapter/entrypoint.py
 
 RUN chmod 0755     /opt/veritas-adapter/entrypoint.py

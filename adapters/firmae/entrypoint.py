@@ -442,19 +442,118 @@ def run_database_command(action: str) -> None:
 
 def dispatch_candidate(
     request: dict[str, Any],
+    event_writer: EventWriter,
 ) -> None:
     requested_stages = request["run"][
         "requested_stages"
     ]
 
-    raise AdapterOperationalError(
-        "FIRMAE_STAGE_NOT_IMPLEMENTED",
-        "candidate_setup",
-        (
-            "FirmAE stage execution has not yet been "
-            "implemented for: "
-            + ", ".join(requested_stages)
-        ),
+    if set(requested_stages) != {"unpack"}:
+        raise AdapterOperationalError(
+            "FIRMAE_STAGE_NOT_IMPLEMENTED",
+            "candidate_setup",
+            (
+                "This FirmAE adapter checkpoint currently "
+                "supports only an unpack-only request; "
+                "requested stages were: "
+                + ", ".join(requested_stages)
+            ),
+        )
+
+    hints = request.get("hints", {})
+    vendor_hint = hints.get("vendor", {})
+
+    brand = vendor_hint.get(
+        "value",
+        "unknown",
+    )
+
+    firmware_path = map_contract_path(
+        request["firmware"]["path"]
+    )
+    workspace_path = map_contract_path(
+        request["paths"]["workspace"]
+    )
+    artifacts_path = map_contract_path(
+        request["paths"]["artifacts"]
+    )
+
+    workspace_path.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    artifacts_path.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    event_writer.emit(
+        "candidate_started",
+        state="running",
+    )
+
+    command = [
+        "/usr/local/bin/veritas-firmae-unpack",
+        "--firmware",
+        str(firmware_path),
+        "--artifacts",
+        str(artifacts_path),
+        "--workspace",
+        str(workspace_path),
+        "--brand",
+        brand,
+        "--case-id",
+        request["firmware"]["case_id"],
+    ]
+
+    completed = subprocess.run(
+        command,
+        check=False,
+        text=True,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+    )
+
+    if completed.returncode != 0:
+        raise AdapterOperationalError(
+            "FIRMAE_EXTRACTION_FAILED",
+            "candidate_execution",
+            (
+                "FirmAE extraction failed with return "
+                f"code {completed.returncode}; inspect "
+                "/veritas/artifacts/rootfs-extractor.log, "
+                "/veritas/artifacts/kernel-extractor.log "
+                "and /veritas/artifacts/unpack-error.json"
+            ),
+        )
+
+    required_artifacts = [
+        artifacts_path / "rootfs.tar.gz",
+        artifacts_path / "unpack-metadata.json",
+        artifacts_path / "rootfs-extractor.log",
+        artifacts_path / "kernel-extractor.log",
+    ]
+
+    missing = [
+        path.name
+        for path in required_artifacts
+        if not path.is_file()
+    ]
+
+    if missing:
+        raise AdapterOperationalError(
+            "FIRMAE_EXTRACTION_ARTIFACT_MISSING",
+            "candidate_execution",
+            (
+                "FirmAE extraction returned successfully "
+                "but required artifacts are missing: "
+                + ", ".join(missing)
+            ),
+        )
+
+    event_writer.emit(
+        "extraction_complete",
+        state="waiting_for_shutdown",
     )
 
 
@@ -544,7 +643,10 @@ def main() -> int:
 
             lifecycle_state["value"] = "running"
 
-            dispatch_candidate(request)
+            dispatch_candidate(
+                request,
+                event_writer,
+            )
 
         except AdapterOperationalError as exc:
             failure_seen = True
