@@ -1,0 +1,665 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import stat
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Sequence
+
+from jsonschema import Draft202012Validator
+
+from veritas_core.adapter_registry import AdapterRecord
+
+
+class DockerBackendError(RuntimeError):
+    """Raised when neutral Docker execution cannot continue."""
+
+
+class RuntimeRequirementError(DockerBackendError):
+    """Raised when an authorised runtime requirement is unavailable."""
+
+
+@dataclass(frozen=True)
+class BuiltAdapterImage:
+    adapter_id: str
+    reference: str
+    image_id: str
+    repo_digests: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CreatedContainer:
+    container_id: str
+    container_name: str
+    image_id: str
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+
+    return digest.hexdigest()
+
+
+def _safe_container_component(value: str) -> str:
+    cleaned = "".join(
+        character.lower()
+        if character.isalnum()
+        else "-"
+        for character in value
+    ).strip("-")
+
+    while "--" in cleaned:
+        cleaned = cleaned.replace("--", "-")
+
+    return cleaned[:40] or "run"
+
+
+class DockerBackend:
+    """
+    Candidate-neutral Docker build and runtime backend.
+
+    Candidate identifiers are treated only as manifest and run data.
+    """
+
+    def __init__(self, run_request_schema_path: Path) -> None:
+        self.run_request_schema_path = (
+            run_request_schema_path.resolve()
+        )
+
+        try:
+            schema = json.loads(
+                self.run_request_schema_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except FileNotFoundError as exc:
+            raise DockerBackendError(
+                f"Run-request schema not found: "
+                f"{self.run_request_schema_path}"
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise DockerBackendError(
+                f"Invalid run-request schema: {exc}"
+            ) from exc
+
+        Draft202012Validator.check_schema(schema)
+
+        self._request_validator = Draft202012Validator(
+            schema,
+            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        )
+
+    def _run(
+        self,
+        arguments: Sequence[str],
+        *,
+        check: bool = True,
+        timeout: float = 300,
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            completed = subprocess.run(
+                ["docker", *arguments],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise DockerBackendError(
+                "Docker CLI was not found"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise DockerBackendError(
+                f"Docker command timed out: "
+                f"docker {' '.join(arguments)}"
+            ) from exc
+
+        if check and completed.returncode != 0:
+            raise DockerBackendError(
+                f"Docker command failed with code "
+                f"{completed.returncode}:\n"
+                f"docker {' '.join(arguments)}\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
+
+        return completed
+
+    def docker_available(self) -> bool:
+        completed = self._run(
+            ["info", "--format", "{{json .ServerVersion}}"],
+            check=False,
+            timeout=20,
+        )
+        return completed.returncode == 0
+
+    def build_adapter(
+        self,
+        adapter: AdapterRecord,
+    ) -> BuiltAdapterImage:
+        build = adapter.manifest["build"]
+
+        context_path = (
+            adapter.package_dir / build["context"]
+        ).resolve()
+
+        dockerfile_path = (
+            context_path / build["dockerfile"]
+        ).resolve()
+
+        image_reference = (
+            f"veritas-adapter-{adapter.adapter_id}:"
+            f"{adapter.manifest['adapter']['version']}"
+        )
+
+        self._run(
+            [
+                "build",
+                "--pull",
+                "--platform",
+                build["platform"],
+                "--file",
+                str(dockerfile_path),
+                "--tag",
+                image_reference,
+                str(context_path),
+            ],
+            timeout=1800,
+        )
+
+        image_data = self.inspect_image(image_reference)
+
+        image_id = image_data.get("Id")
+
+        if not isinstance(image_id, str):
+            raise DockerBackendError(
+                f"Docker did not return an image ID for "
+                f"{image_reference}"
+            )
+
+        repo_digests = tuple(
+            item
+            for item in image_data.get("RepoDigests", [])
+            if isinstance(item, str)
+        )
+
+        return BuiltAdapterImage(
+            adapter_id=adapter.adapter_id,
+            reference=image_reference,
+            image_id=image_id,
+            repo_digests=repo_digests,
+        )
+
+    def inspect_image(
+        self,
+        image_reference: str,
+    ) -> dict[str, Any]:
+        completed = self._run(
+            ["image", "inspect", image_reference]
+        )
+
+        try:
+            documents = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise DockerBackendError(
+                f"Invalid Docker image-inspect response: {exc}"
+            ) from exc
+
+        if (
+            not isinstance(documents, list)
+            or not documents
+            or not isinstance(documents[0], dict)
+        ):
+            raise DockerBackendError(
+                "Docker image inspect returned no image"
+            )
+
+        return documents[0]
+
+    def load_and_validate_request(
+        self,
+        request_path: Path,
+        adapter: AdapterRecord,
+    ) -> dict[str, Any]:
+        try:
+            request = json.loads(
+                request_path.read_text(encoding="utf-8")
+            )
+        except FileNotFoundError as exc:
+            raise DockerBackendError(
+                f"Run request not found: {request_path}"
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise DockerBackendError(
+                f"Invalid run-request JSON: {exc}"
+            ) from exc
+
+        errors = sorted(
+            self._request_validator.iter_errors(request),
+            key=lambda error: list(error.absolute_path),
+        )
+
+        if errors:
+            messages = []
+
+            for error in errors:
+                location = ".".join(
+                    str(part)
+                    for part in error.absolute_path
+                )
+                messages.append(
+                    f"{location or '<root>'}: {error.message}"
+                )
+
+            raise DockerBackendError(
+                "Run-request validation failed:\n  - "
+                + "\n  - ".join(messages)
+            )
+
+        if request["run"]["adapter_id"] != adapter.adapter_id:
+            raise DockerBackendError(
+                "Run-request adapter_id does not match the "
+                "validated adapter manifest"
+            )
+
+        requested_stages = set(
+            request["run"]["requested_stages"]
+        )
+
+        supported_stages = set(
+            adapter.manifest["capabilities"]["stages"]
+        )
+
+        unsupported_stages = (
+            requested_stages - supported_stages
+        )
+
+        if unsupported_stages:
+            raise DockerBackendError(
+                "Run request contains unsupported stages: "
+                + ", ".join(sorted(unsupported_stages))
+            )
+
+        manifest_runtime = adapter.manifest["runtime"]
+        runtime_grants = request["runtime_grants"]
+
+        if (
+            runtime_grants["run_as_root"]
+            != manifest_runtime["run_as_root"]
+        ):
+            raise DockerBackendError(
+                "run_as_root grant does not match the "
+                "validated adapter manifest"
+            )
+
+        if (
+            runtime_grants["network"]
+            != manifest_runtime["network"]
+        ):
+            raise DockerBackendError(
+                "Network grant does not match the validated "
+                "adapter manifest"
+            )
+
+        if set(runtime_grants["requirements"]) != set(
+            manifest_runtime["requirements"]
+        ):
+            raise DockerBackendError(
+                "Runtime requirement grants do not match the "
+                "validated adapter manifest"
+            )
+
+        firmware_path = request_path.parent / "firmware"
+
+        if not firmware_path.is_file():
+            raise DockerBackendError(
+                f"Canonical firmware object not found: "
+                f"{firmware_path}"
+            )
+
+        actual_size = firmware_path.stat().st_size
+        actual_hash = _sha256_file(firmware_path)
+
+        if actual_size != request["firmware"]["size_bytes"]:
+            raise DockerBackendError(
+                "Canonical firmware size does not match the "
+                "run request"
+            )
+
+        if actual_hash != request["firmware"]["sha256"]:
+            raise DockerBackendError(
+                "Canonical firmware SHA-256 does not match "
+                "the run request"
+            )
+
+        return request
+
+    def _require_device(self, path: Path) -> str:
+        if not path.exists():
+            raise RuntimeRequirementError(
+                f"Required host device is unavailable: {path}"
+            )
+
+        return str(path)
+
+    def _requirement_arguments(
+        self,
+        requirements: list[str],
+    ) -> list[str]:
+        arguments: list[str] = []
+
+        for requirement in sorted(requirements):
+            if requirement == "kvm":
+                device = self._require_device(Path("/dev/kvm"))
+                arguments.extend(["--device", device])
+
+            elif requirement == "tun-tap":
+                device = self._require_device(
+                    Path("/dev/net/tun")
+                )
+                arguments.extend(["--device", device])
+
+            elif requirement == "device-mapper":
+                device = self._require_device(
+                    Path("/dev/mapper/control")
+                )
+                arguments.extend(["--device", device])
+
+            elif requirement == "net-admin":
+                arguments.extend(
+                    ["--cap-add", "NET_ADMIN"]
+                )
+
+            elif requirement == "ptrace":
+                arguments.extend(
+                    ["--cap-add", "SYS_PTRACE"]
+                )
+
+            elif requirement == "full-privileged":
+                arguments.append("--privileged")
+
+            elif requirement == "loop-devices":
+                loop_control = self._require_device(
+                    Path("/dev/loop-control")
+                )
+                arguments.extend(
+                    ["--device", loop_control]
+                )
+
+                loop_devices: list[Path] = []
+
+                for path in sorted(Path("/dev").glob("loop[0-9]*")):
+                    try:
+                        mode = path.stat().st_mode
+                    except FileNotFoundError:
+                        continue
+
+                    if stat.S_ISBLK(mode):
+                        loop_devices.append(path)
+
+                if not loop_devices:
+                    raise RuntimeRequirementError(
+                        "No host loop block devices are available"
+                    )
+
+                for path in loop_devices:
+                    arguments.extend(
+                        ["--device", str(path)]
+                    )
+
+            elif requirement == "nested-containers":
+                raise RuntimeRequirementError(
+                    "nested-containers is declared by the "
+                    "contract but is not implemented by the "
+                    "v1 Docker backend"
+                )
+
+            else:
+                raise RuntimeRequirementError(
+                    f"Unsupported runtime requirement: "
+                    f"{requirement}"
+                )
+
+        return arguments
+
+    def create_container(
+        self,
+        adapter: AdapterRecord,
+        image: BuiltAdapterImage,
+        request_path: Path,
+        contract_root: Path,
+    ) -> CreatedContainer:
+        request_path = request_path.resolve()
+        contract_root = contract_root.resolve()
+
+        request = self.load_and_validate_request(
+            request_path,
+            adapter,
+        )
+
+        input_directory = contract_root / "input"
+        work_directory = contract_root / "work"
+        artifacts_directory = contract_root / "artifacts"
+        events_directory = contract_root / "events"
+        control_directory = contract_root / "control"
+
+        for directory in (
+            work_directory,
+            artifacts_directory,
+            events_directory,
+            control_directory,
+        ):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        run_id = request["run"]["run_id"]
+        run_hash = hashlib.sha256(
+            run_id.encode("utf-8")
+        ).hexdigest()[:12]
+
+        container_name = (
+            "veritas-"
+            + _safe_container_component(
+                request["run"]["adapter_id"]
+            )
+            + "-"
+            + run_hash
+        )
+
+        resources = request["resources"]
+        runtime = request["runtime_grants"]
+
+        arguments = [
+            "container",
+            "create",
+            "--name",
+            container_name,
+            "--init",
+            "--label",
+            "veritas.managed=true",
+            "--label",
+            f"veritas.run_id={run_id}",
+            "--label",
+            (
+                "veritas.experiment_id="
+                f"{request['run']['experiment_id']}"
+            ),
+            "--label",
+            (
+                "veritas.adapter_id="
+                f"{request['run']['adapter_id']}"
+            ),
+            "--cpus",
+            str(resources["cpu_cores"]),
+            "--memory",
+            str(resources["memory_bytes"]),
+            "--memory-swap",
+            str(resources["memory_bytes"]),
+            "--pids-limit",
+            str(resources["pids_limit"]),
+            "--mount",
+            (
+                f"type=bind,src={input_directory},"
+                "dst=/veritas/input,readonly"
+            ),
+            "--mount",
+            (
+                f"type=bind,src={work_directory},"
+                "dst=/veritas/work"
+            ),
+            "--mount",
+            (
+                f"type=bind,src={artifacts_directory},"
+                "dst=/veritas/artifacts"
+            ),
+            "--mount",
+            (
+                f"type=bind,src={events_directory},"
+                "dst=/veritas/events"
+            ),
+            "--mount",
+            (
+                f"type=bind,src={control_directory},"
+                "dst=/veritas/control"
+            ),
+        ]
+
+        network_mode = runtime["network"]
+
+        if network_mode == "none":
+            arguments.extend(["--network", "none"])
+        elif network_mode == "host":
+            arguments.extend(["--network", "host"])
+        elif network_mode == "isolated":
+            raise RuntimeRequirementError(
+                "Per-run isolated Docker networking has not "
+                "yet been implemented"
+            )
+        else:
+            raise RuntimeRequirementError(
+                f"Unsupported network mode: {network_mode}"
+            )
+
+        if not runtime["run_as_root"]:
+            arguments.extend(
+                [
+                    "--user",
+                    f"{os.getuid()}:{os.getgid()}",
+                ]
+            )
+
+        arguments.extend(
+            self._requirement_arguments(
+                runtime["requirements"]
+            )
+        )
+
+        arguments.extend(
+            [
+                image.reference,
+                "/veritas/input/request.json",
+            ]
+        )
+
+        completed = self._run(arguments)
+
+        container_id = completed.stdout.strip()
+
+        if not container_id:
+            raise DockerBackendError(
+                "Docker create returned no container ID"
+            )
+
+        return CreatedContainer(
+            container_id=container_id,
+            container_name=container_name,
+            image_id=image.image_id,
+        )
+
+    def start_container(self, container_id: str) -> None:
+        self._run(
+            ["container", "start", container_id]
+        )
+
+    def inspect_container(
+        self,
+        container_id: str,
+    ) -> dict[str, Any]:
+        completed = self._run(
+            ["container", "inspect", container_id]
+        )
+
+        try:
+            documents = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise DockerBackendError(
+                f"Invalid container-inspect response: {exc}"
+            ) from exc
+
+        if (
+            not isinstance(documents, list)
+            or not documents
+            or not isinstance(documents[0], dict)
+        ):
+            raise DockerBackendError(
+                "Docker container inspect returned no container"
+            )
+
+        return documents[0]
+
+    def container_running(self, container_id: str) -> bool:
+        state = self.inspect_container(container_id)["State"]
+        return bool(state.get("Running"))
+
+    def exit_code(self, container_id: str) -> int:
+        state = self.inspect_container(container_id)["State"]
+        return int(state.get("ExitCode", -1))
+
+    def stop_container(
+        self,
+        container_id: str,
+        timeout_seconds: int = 2,
+    ) -> None:
+        self._run(
+            [
+                "container",
+                "stop",
+                "--time",
+                str(timeout_seconds),
+                container_id,
+            ],
+            check=False,
+            timeout=timeout_seconds + 10,
+        )
+
+    def kill_container(self, container_id: str) -> None:
+        self._run(
+            ["container", "kill", container_id],
+            check=False,
+            timeout=20,
+        )
+
+    def container_logs(
+        self,
+        container_id: str,
+    ) -> tuple[str, str]:
+        completed = self._run(
+            ["container", "logs", container_id],
+            check=False,
+            timeout=60,
+        )
+        return completed.stdout, completed.stderr
+
+    def remove_container(self, container_id: str) -> None:
+        self._run(
+            ["container", "rm", "--force", container_id],
+            check=False,
+            timeout=30,
+        )
