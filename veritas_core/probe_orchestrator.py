@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from veritas_core.probes.http_snapshot import (
     HttpServiceSnapshot,
@@ -14,6 +14,10 @@ from veritas_core.probes.service_authenticity import (
 from veritas_core.probes.service_reachability import (
     ReachabilityObservation,
     probe_endpoint_event,
+)
+from veritas_core.probes.service_stability import (
+    StabilityObservation,
+    measure_endpoint_stability,
 )
 
 
@@ -35,6 +39,22 @@ class EndpointProbeRecord:
                 self.active_http_snapshot.to_dict()
                 if self.active_http_snapshot is not None
                 else None
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class EndpointStabilityRecord:
+    source_event_sequence: int
+    candidate_claim: dict[str, Any]
+    independent_measurement: StabilityObservation
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source_event_sequence": self.source_event_sequence,
+            "candidate_claim": dict(self.candidate_claim),
+            "independent_measurement": (
+                self.independent_measurement.to_dict()
             ),
         }
 
@@ -65,11 +85,14 @@ class IndependentProbeOrchestrator:
     """
     Dispatch independent probes from validated adapter events.
 
-    Candidate events trigger measurements but never determine their results.
+    Candidate events trigger measurement but never determine their results.
     """
 
     def __init__(self) -> None:
         self.endpoint_records: list[EndpointProbeRecord] = []
+        self.stability_records: list[
+            EndpointStabilityRecord
+        ] = []
         self.authenticity_records: list[
             EndpointAuthenticityRecord
         ] = []
@@ -105,6 +128,51 @@ class IndependentProbeOrchestrator:
 
         self.endpoint_records.append(record)
         return [record]
+
+    def measure_stability(
+        self,
+        *,
+        sample_count: int,
+        interval_seconds: float,
+        timeout_seconds: float,
+        should_continue: Callable[[], bool] | None = None,
+    ) -> list[EndpointStabilityRecord]:
+        self.stability_records = []
+
+        for endpoint_record in self.endpoint_records:
+            endpoint_event = {
+                "event": "endpoint_reported",
+                "sequence": (
+                    endpoint_record.source_event_sequence
+                ),
+                "endpoint": dict(
+                    endpoint_record.candidate_claim
+                ),
+            }
+
+            observation = measure_endpoint_stability(
+                endpoint_event,
+                sample_count=sample_count,
+                interval_seconds=interval_seconds,
+                timeout_seconds=timeout_seconds,
+                should_continue=should_continue,
+            )
+
+            stability_record = EndpointStabilityRecord(
+                source_event_sequence=(
+                    endpoint_record.source_event_sequence
+                ),
+                candidate_claim=dict(
+                    endpoint_record.candidate_claim
+                ),
+                independent_measurement=observation,
+            )
+
+            self.stability_records.append(
+                stability_record
+            )
+
+        return list(self.stability_records)
 
     def finalize_authenticity(
         self,
