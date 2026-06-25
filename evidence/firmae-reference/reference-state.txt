@@ -1,0 +1,160 @@
+VERITAS FIRMAE REFERENCE STATE
+Collected UTC: 2026-06-25T18:11:46+00:00
+
+=== VERITAS COMMIT ===
+625b928b0eeb443f317bccf77092e1b3ccbfc59c
+
+=== LEGACY FIRMAE PACKAGE ===
+candidates/firmae/actual_deps.txt
+candidates/firmae/candidate.conf
+candidates/firmae/declared_deps.txt
+candidates/firmae/Dockerfile
+candidates/firmae/Dockerfile.adapter-only
+candidates/firmae/run_adapter.sh
+candidates/firmae/run_adapter.sh.before_persistent_mode_20260625_153835Z
+candidates/firmae/veritas_patch_firmae_config.py
+
+=== LEGACY FILE HASHES ===
+68aacfed1ac53eadcb18170f4a1f68fef6ed14c203ef7cc658a5fb0eb0c8d30b  candidates/firmae/actual_deps.txt
+08c53e124ed1f87c26372dc19a52e0517f3f49f5b7d32bc846f7c9c17f503182  candidates/firmae/candidate.conf
+df9c41fb2ea8bc3b0304826a52c074d25a2b0e658d8911d2f24fcacd766e068e  candidates/firmae/declared_deps.txt
+5415ab55aa0a7445dfc13a2b884ab3c0bb3c5d02059a7877feedeca117e6ad36  candidates/firmae/Dockerfile
+e7bb712bb1fe28805e25f18918d140c6baa2b0e9f7322227bc921588e1fc88c7  candidates/firmae/Dockerfile.adapter-only
+32e27c0718d169a03b6349c2144981a192d2af4e0248d1e6c16d56deeb3b2cb4  candidates/firmae/run_adapter.sh
+6ba1f2cb729be3dc9baf781fadcbf7bbeeb0e1cc4cb5e19c6e5e1c300e0a3921  candidates/firmae/run_adapter.sh.before_persistent_mode_20260625_153835Z
+804f0b67a630251b9bed626a8f16faec60fe2631cb15b074cc7182e59a8d125d  candidates/firmae/veritas_patch_firmae_config.py
+
+=== LOCAL FIRMAE CLONE ===
+Path: /home/ubuntu/Desktop/FirmAE
+Commit: dd98505984feac91cf113e13d5de01a4fc1574f2
+Branch: master
+Origin:
+https://github.com/pr0v3rbs/FirmAE.git
+Status:
+ ? analyses/routersploit
+?? DIR-868L_fw_revB_2-05b02_eu_multi_20161117.zip
+
+=== FIRMAE DOCKER IMAGES ===
+veritas/firmae|latest|sha256:753b77abd630b8e0c607a6ca6a35204e51cffd9d2df190f073960b4923313ad3|sha256:753b77abd630b8e0c607a6ca6a35204e51cffd9d2df190f073960b4923313ad3
+veritas/firmae|before-persistent-mode|sha256:ea000d6f30990cfcc842c70a8b3cfdfc67144bc91f0a4404f91f2edc811cec29|sha256:ea000d6f30990cfcc842c70a8b3cfdfc67144bc91f0a4404f91f2edc811cec29
+
+=== COMMIT STORED INSIDE FIRMAE IMAGES ===
+--- veritas/firmae:latest ---
+ID=sha256:753b77abd630b8e0c607a6ca6a35204e51cffd9d2df190f073960b4923313ad3 Architecture=arm64 OS=linux Created=2026-06-25T16:39:56.898454269+01:00
+FirmAE commit=dd98505984feac91cf113e13d5de01a4fc1574f2
+--- veritas/firmae:before-persistent-mode ---
+ID=sha256:ea000d6f30990cfcc842c70a8b3cfdfc67144bc91f0a4404f91f2edc811cec29 Architecture=arm64 OS=linux Created=2026-06-13T03:39:21.981040464+01:00
+FirmAE commit=dd98505984feac91cf113e13d5de01a4fc1574f2
+
+=== LEGACY COUPLING REFERENCES ===
+run_veritas.py:18:    python run_veritas.py --firmware /path/to/firmware_folder --candidates firmae
+run_veritas.py:21:    python run_veritas.py --firmware /path/to/DIR-868L.zip --candidates firmae
+run_veritas.py:46:    shell scripts can read FIRMAE_DIR, FIRMADYNE_DIR, etc. directly
+run_veritas.py:110:def _reset_firmae_state_in_containers():
+run_veritas.py:112:    Reset FirmAE's accumulated database and scratch state.
+run_veritas.py:115:    This is necessary because FirmAE uses a persistent PostgreSQL database
+run_veritas.py:119:    This is documented as Finding F13 — FirmAE has no built-in run isolation.
+run_veritas.py:126:    print("[VERITAS] Resetting FirmAE session state (Finding F13)...")
+run_veritas.py:128:    # Clean up stale loop devices left by previous FirmAE runs (Finding F7)
+run_veritas.py:129:    # FirmAE does not detach loop devices on container exit, causing
+run_veritas.py:139:            if "firmae" in line.lower() or "(deleted)" in line:
+run_veritas.py:155:    firmae_candidate = Path("candidates/firmae")
+run_veritas.py:156:    if not firmae_candidate.exists():
+run_veritas.py:159:    runner = DockerRunner(firmae_candidate)
+run_veritas.py:164:        # Run a quick reset inside a temporary FirmAE container
+run_veritas.py:170:                "veritas/firmae",
+run_veritas.py:176:                "rm -rf /opt/firmae/scratch/* 2>/dev/null || true; "
+run_veritas.py:177:                "rm -rf /opt/firmae/images/* 2>/dev/null || true; "
+run_veritas.py:178:                "echo '[VERITAS] FirmAE state reset complete'"
+run_veritas.py:184:            print("[VERITAS] FirmAE state reset complete")
+run_veritas.py:186:            print("[VERITAS] FirmAE state reset skipped (non-fatal)")
+run_veritas.py:188:        print(f"[VERITAS] FirmAE state reset skipped: {e}")
+run_veritas.py:234:          "firmae": {
+run_veritas.py:235:              "id": "firmae",
+run_veritas.py:236:              "name": "FirmAE",
+run_veritas.py:237:              "adapter": Path("candidates/firmae/run_adapter.sh"),
+run_veritas.py:238:              "success_signals": ["Network reachable", "Web service"],
+run_veritas.py:270:        # Parse the comma-separated success_signals into a list
+run_veritas.py:271:        raw_signals = settings.get("success_signals", "")
+run_veritas.py:282:            "success_signals":         signals,
+run_veritas.py:979:                success_signals=candidate["success_signals"],
+run_veritas.py:1168:  python run_veritas.py --firmware /path/to/firmware_folder --candidates firmae
+run_veritas.py:1169:  python run_veritas.py --firmware /path/to/single_image.bin --candidates firmae
+run_veritas.py:1200:             "Example: --register-tool ~/Desktop/FirmAE"
+run_veritas.py:1207:             "Example: --rebuild-image firmae"
+run_veritas.py:1269:                print(f"    Signals:    {c['success_signals']}")
+run_veritas.py:1312:    # Resets FirmAE database once per session, not between images
+run_veritas.py:1313:    if any("firmae" in k.lower() for k in selected.keys()):
+run_veritas.py:1314:        print("[VERITAS] FirmAE pre-session reset skipped for direct-mode test")
+run_veritas.py:1315:        # _reset_firmae_state_in_containers()
+docker_runner.py:379:        # FirmAE needs loop devices AND /dev/mapper for kpartx to work
+candidates/firmae/Dockerfile:1:# candidates/firmae/Dockerfile
+candidates/firmae/Dockerfile:2:# VERITAS FirmAE Docker image.
+candidates/firmae/Dockerfile:3:# Builds FirmAE, then applies the VERITAS Docker partition fix after install.sh.
+candidates/firmae/Dockerfile:10:ARG TOOL_REPO=https://github.com/pr0v3rbs/FirmAE.git
+candidates/firmae/Dockerfile:27:RUN git clone --depth 1 "$TOOL_REPO" firmae && \
+candidates/firmae/Dockerfile:28:    cd firmae && \
+candidates/firmae/Dockerfile:31:WORKDIR /opt/firmae
+candidates/firmae/Dockerfile:37:# VERITAS permanent FirmAE Docker partition fix.
+candidates/firmae/Dockerfile:38:# This is applied after install.sh because install.sh may rewrite firmae.config.
+candidates/firmae/Dockerfile:39:COPY veritas_patch_firmae_config.py /tmp/veritas_patch_firmae_config.py
+candidates/firmae/Dockerfile:41:RUN python3 /tmp/veritas_patch_firmae_config.py && \
+candidates/firmae/Dockerfile:42:    grep -n "SYSDEV=\"/sys/block" /opt/firmae/firmae.config && \
+candidates/firmae/Dockerfile:43:    grep -n "mknod.*DEV_PATH" /opt/firmae/firmae.config && \
+candidates/firmae/Dockerfile:44:    grep -n "kpartx -avs" /opt/firmae/firmae.config
+candidates/firmae/Dockerfile:49:WORKDIR /opt/firmae
+candidates/firmae/Dockerfile.adapter-only:1:FROM veritas/firmae:before-persistent-mode
+candidates/firmae/candidate.conf:1:name = FirmAE
+candidates/firmae/candidate.conf:2:id = firmae
+candidates/firmae/candidate.conf:4:tool_local_path = /home/ubuntu/Desktop/FirmAE
+candidates/firmae/candidate.conf:5:tool_repo = https://github.com/pr0v3rbs/FirmAE.git
+candidates/firmae/candidate.conf:6:success_signals = Network reachable on, Web service on
+candidates/firmae/actual_deps.txt:1:# Actual dependencies for FirmAE
+candidates/firmae/run_adapter.sh:8:    echo "[VERITAS][firmae] ERROR: usage: run_adapter.sh <firmware_path> <architecture>" >&2
+candidates/firmae/run_adapter.sh:13:    echo "[VERITAS][firmae] ERROR: firmware not found: $FIRMWARE" >&2
+candidates/firmae/run_adapter.sh:19:CONF_FIRMAE_DIR=""
+candidates/firmae/run_adapter.sh:22:    CONF_FIRMAE_DIR="$(awk -F= '
+candidates/firmae/run_adapter.sh:33:FIRMAE_DIR="${FIRMAE_DIR:-${CONF_FIRMAE_DIR:-/opt/firmae}}"
+candidates/firmae/run_adapter.sh:35:if [ ! -d "$FIRMAE_DIR" ]; then
+candidates/firmae/run_adapter.sh:36:    echo "[VERITAS][firmae] ERROR: FirmAE directory not found: $FIRMAE_DIR" >&2
+candidates/firmae/run_adapter.sh:37:    echo "[VERITAS][firmae] Check tool_local_path in candidates/firmae/candidate.conf" >&2
+candidates/firmae/run_adapter.sh:41:if [ ! -f "$FIRMAE_DIR/run.sh" ]; then
+candidates/firmae/run_adapter.sh:42:    echo "[VERITAS][firmae] ERROR: run.sh not found in: $FIRMAE_DIR" >&2
+candidates/firmae/run_adapter.sh:46:echo "[VERITAS][firmae] Starting FirmAE on: $(basename "$FIRMWARE") ($ARCH)"
+candidates/firmae/run_adapter.sh:47:echo "[VERITAS][firmae] FirmAE dir: $FIRMAE_DIR"
+candidates/firmae/run_adapter.sh:57:    -f "$FIRMAE_DIR/database/schema" 2>/dev/null || true
+candidates/firmae/run_adapter.sh:59:cd "$FIRMAE_DIR"
+candidates/firmae/run_adapter.sh:61:run_firmae() {
+candidates/firmae/run_adapter.sh:63:    echo "[VERITAS][firmae] Trying arch: $arch"
+candidates/firmae/run_adapter.sh:66:    sudo rm -rf "$FIRMAE_DIR/scratch"/* 2>/dev/null || true
+candidates/firmae/run_adapter.sh:67:    sudo rm -rf "$FIRMAE_DIR/images"/* 2>/dev/null || true
+candidates/firmae/run_adapter.sh:74:    echo "[VERITAS][firmae] Using detected arch: $ARCH"
+candidates/firmae/run_adapter.sh:75:    run_firmae "$ARCH"
+candidates/firmae/run_adapter.sh:77:    echo "[VERITAS][firmae] Arch unknown — trying arm, mips, mipsel in order"
+candidates/firmae/run_adapter.sh:78:    run_firmae "arm" || run_firmae "mips" || run_firmae "mipsel"
+candidates/firmae/run_adapter.sh:82:echo "[VERITAS][firmae] Exited with code: $EXIT_CODE"
+candidates/firmae/declared_deps.txt:1:# Declared dependencies for FirmAE
+candidates/firmae/veritas_patch_firmae_config.py:3:path = Path("/opt/firmae/firmae.config")
+candidates/firmae/veritas_patch_firmae_config.py:6:    raise SystemExit(f"FirmAE config not found: {path}")
+candidates/firmae/veritas_patch_firmae_config.py:34:        echo "[VERITAS][firmae] add_partition failed: no loop device for ${IMAGE_PATH}" >&2
+candidates/firmae/veritas_patch_firmae_config.py:79:    echo "[VERITAS][firmae] add_partition failed: no partition node for ${LOOP_DEV}" >&2
+candidates/firmae/veritas_patch_firmae_config.py:116:print("VERITAS patch applied and verified inside /opt/firmae/firmae.config")
+probes/probe_service.py:7:This distinction matters because tools like FirmAE report a service as
+probes/probe_boot.py:13:The container shares the host network stack (--network host) because FirmAE
+probes/probe_boot.py:108:        [+] Network reachable on 192.168.0.1!
+probes/probe_boot.py:109:        [+] Web service on 192.168.0.1
+probes/probe_boot.py:131:    success_signals, stdout_log, stderr_log,
+probes/probe_boot.py:162:    lower_signals = [s.lower().strip() for s in success_signals]
+probes/probe_boot.py:206:                        "reachable", "network reachable", "web service",
+probes/probe_boot.py:305:    success_signals: list,
+probes/probe_boot.py:325:    success_signals : list of str
+probes/probe_boot.py:384:            success_signals=success_signals,
+probes/probe_boot.py:417:    lower_signals = [s.lower() for s in success_signals]
+probes/probe_boot.py:515:                    "reachable", "network reachable", "web service",
+probes/probe_boot.py:627:                        "reachable", "network reachable", "web service",
+probes/probe_boot.py:646:                            "stdout_log_fallback_ip_with_keyword"
+probes/probe_boot.py:648:                            "stdout_log_fallback_explicit_signal"
+probes/probe_boot.py:658:                result["notes"].append(f"stdout_log_fallback_scan_failed: {_exc}")
+probes/probe_cleanup.py:112:    Detach any loop devices left behind by FirmAE or FIRMADYNE.
+probes/probe_cleanup.py:113:    FirmAE does not clean up loop devices on exit — Finding F7.
+probes/probe_cleanup.py:125:                "firmae" in lower_line
