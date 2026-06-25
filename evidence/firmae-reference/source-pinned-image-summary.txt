@@ -1,0 +1,6 @@
+Image ID: sha256:469eb08646797167d97effddf40c9ab4cf0a3e3cf8b0072cd94f34c4ceb83517
+Architecture: amd64
+OS: linux
+Created: 2026-06-25T21:11:37.371759805+01:00
+Source revision: dd98505984feac91cf113e13d5de01a4fc1574f2
+Base platform: linux/amd64

@@ -1,0 +1,54 @@
+[
+    {
+        "Architecture": "amd64",
+        "Config": {
+            "Entrypoint": [
+                "python3",
+                "/opt/veritas-adapter/entrypoint.py"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "DEBIAN_FRONTEND=noninteractive",
+                "FIRMAE_HOME=/opt/firmae"
+            ],
+            "Labels": {
+                "org.opencontainers.image.revision": "dd98505984feac91cf113e13d5de01a4fc1574f2",
+                "org.opencontainers.image.source": "https://github.com/pr0v3rbs/FirmAE",
+                "org.opencontainers.image.title": "VERITAS FirmAE Adapter",
+                "org.opencontainers.image.version": "22.04",
+                "veritas.adapter.contract-version": "1.0",
+                "veritas.adapter.id": "firmae"
+            }
+        },
+        "Created": "2026-06-25T21:11:37.371759805+01:00",
+        "Descriptor": {
+            "digest": "sha256:469eb08646797167d97effddf40c9ab4cf0a3e3cf8b0072cd94f34c4ceb83517",
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "size": 1617
+        },
+        "Id": "sha256:469eb08646797167d97effddf40c9ab4cf0a3e3cf8b0072cd94f34c4ceb83517",
+        "Metadata": {
+            "LastTagTime": "2026-06-25T20:11:37.590493118Z"
+        },
+        "Os": "linux",
+        "Parent": "sha256:dc4b5e828e12c3494a28bf8575d11eb1d4a2d578b1c90a04ec83cbfe936f8f1a",
+        "RepoDigests": [
+            "veritas-adapter-firmae@sha256:469eb08646797167d97effddf40c9ab4cf0a3e3cf8b0072cd94f34c4ceb83517"
+        ],
+        "RepoTags": [
+            "veritas-adapter-firmae:source-pinned"
+        ],
+        "RootFS": {
+            "Layers": [
+                "sha256:8bba68e7621928237aa6d6e2c680cb9572c942ee23c2adabd22016bb67cb938d",
+                "sha256:3544610f2b0f61ef1d556af916b70c3e26fe3b842a0ffe2580465d14166f77b4",
+                "sha256:62b6a49053a0e399abec894569a18dd0289159f84403d731f0ef872726ba392e",
+                "sha256:61a7801f8106d76bcc732b04a4d51bfe7c3e222bc3bc49de329447673553eb74",
+                "sha256:bc8afb1457d6f299e923e2ae95446964f54682467e671e8ea73e2fb8af022d93",
+                "sha256:d4aff9ed2df26d87082288d4812f6a59d3f3d6bda6ebe4cbec8e119cf58b3694"
+            ],
+            "Type": "layers"
+        },
+        "Size": 68135670
+    }
+]
