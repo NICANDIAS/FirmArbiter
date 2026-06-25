@@ -1,0 +1,41 @@
+schema_version: "1.0"
+
+adapter:
+  id: mock-adapter
+  display_name: Mock Contract Adapter
+  description: Test fixture for candidate-neutral adapter discovery.
+  version: "0.1.0"
+  contract_version: "1.0"
+
+candidate:
+  name: Mock Candidate
+  source:
+    type: git
+    repository: https://example.invalid/mock-candidate.git
+    commit: "0123456789abcdef0123456789abcdef01234567"
+  patches: []
+
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+    - alpine:3.20@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+runtime:
+  run_as_root: false
+  network: none
+  requirements: []
+
+capabilities:
+  stages:
+    - unpack
+    - emulate
+    - endpoint-discovery
+  firmware_architectures:
+    - unknown
+  endpoint_protocols:
+    - http
+  hints:
+    architecture: optional
+    vendor: unsupported
