@@ -46,6 +46,11 @@ from veritas_core.probes.unpack_validation import (
     validate_unpack_export,
     write_unpack_evidence,
 )
+from veritas_core.probes.boot_validation import (
+    BootObservation,
+    validate_boot_evidence,
+    write_boot_evidence,
+)
 
 
 class RunCoordinatorError(RuntimeError):
@@ -590,6 +595,10 @@ class CandidateRunCoordinator:
             UnpackObservation | None
         ) = None
 
+        boot_observation: (
+            BootObservation | None
+        ) = None
+
         runtime_error: dict[str, Any] | None = None
         endpoint_wait_error: str | None = None
 
@@ -748,6 +757,34 @@ class CandidateRunCoordinator:
                 except Exception:
                     pass
 
+        observed_events = (
+            watchdog.observed_events
+            if watchdog is not None
+            else (
+                list(supervisor.events)
+                if supervisor is not None
+                else []
+            )
+        )
+
+        boot_observation = validate_boot_evidence(
+            contract_root=contract_root,
+            requested=(
+                "emulate"
+                in policy.requested_stages
+            ),
+            candidate_events=observed_events,
+            lifecycle=lifecycle_observation,
+            authenticity_records=(
+                orchestrator.authenticity_records
+            ),
+        )
+
+        write_boot_evidence(
+            contract_root=contract_root,
+            observation=boot_observation,
+        )
+
         unpack_observation = validate_unpack_export(
             contract_root=contract_root,
             requested=(
@@ -806,16 +843,6 @@ class CandidateRunCoordinator:
         )
 
         candidate_claims: list[dict[str, Any]] = []
-
-        observed_events = (
-            watchdog.observed_events
-            if watchdog is not None
-            else (
-                list(supervisor.events)
-                if supervisor is not None
-                else []
-            )
-        )
 
         for event in observed_events:
             if event.get("event") in {
@@ -876,10 +903,14 @@ class CandidateRunCoordinator:
                         ),
                     )
                 ),
-                "boot": _not_attempted(
-                    "Candidate boot claims are recorded "
-                    "separately; independent boot validation "
-                    "has not yet been integrated"
+                "boot": (
+                    _observation_to_dict(
+                        boot_observation,
+                        missing_reason=(
+                            "No independent boot "
+                            "observation was completed"
+                        ),
+                    )
                 ),
                 "reachability": [
                     record.to_dict()
@@ -998,6 +1029,10 @@ class CandidateRunCoordinator:
                 "unpack_observation": (
                     "contract/artifacts/"
                     "unpack-observation.json"
+                ),
+                "boot_observation": (
+                    "contract/artifacts/"
+                    "boot-observation.json"
                 ),
                 "environment_before": (
                     "contract/artifacts/"

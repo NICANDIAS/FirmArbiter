@@ -163,7 +163,14 @@ class EndToEndCoordinatorTests(unittest.TestCase):
                 result[
                     "independent_measurements"
                 ]["boot"]["status"],
-                "not_attempted",
+                "true",
+            )
+
+            self.assertIn(
+                "linux_kernel_and_userspace_console",
+                result[
+                    "independent_measurements"
+                ]["boot"]["methods"],
             )
 
             reachability = result[

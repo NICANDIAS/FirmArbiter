@@ -122,6 +122,27 @@ def main() -> int:
             state="running",
         )
 
+        if "emulate" in request["run"]["requested_stages"]:
+            boot_directory = (
+                Path(request["paths"]["artifacts"])
+                / "boot"
+            )
+            boot_directory.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            (
+                boot_directory
+                / "guest-console.log"
+            ).write_text(
+                "Linux version 6.6.0-veritas-mock\n"
+                "Kernel command line: console=ttyS0\n"
+                "Freeing unused kernel memory\n"
+                "Run /sbin/init as init process\n",
+                encoding="utf-8",
+            )
+
         if "unpack" in request["run"]["requested_stages"]:
             unpack_root = (
                 Path(request["paths"]["artifacts"])
