@@ -225,10 +225,37 @@ cat "$PROVENANCE/base-snapshot-compatibility.tsv"
 # Install FirmAE dependencies.
 ###############################################################################
 
-apt-get install \
+install_attempt=1
+install_max_attempts=6
+
+until apt-get \
+    -o Acquire::Retries=10 \
+    --fix-missing \
+    install \
     --yes \
     --no-install-recommends \
     "${PACKAGES[@]}"
+do
+    if [ "$install_attempt" -ge "$install_max_attempts" ]
+    then
+        echo \
+            "Dependency installation failed after ${install_attempt} attempts." \
+            >&2
+        exit 1
+    fi
+
+    echo \
+        "Snapshot package download failed; retrying attempt $((install_attempt + 1))/${install_max_attempts}." \
+        >&2
+
+    install_attempt=$((install_attempt + 1))
+
+    sleep 15
+
+    apt-get \
+        -o Acquire::Retries=10 \
+        update
+done
 
 for package in "${PACKAGES[@]}"
 do
