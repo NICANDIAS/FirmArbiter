@@ -122,6 +122,60 @@ def main() -> int:
             state="running",
         )
 
+        if "unpack" in request["run"]["requested_stages"]:
+            unpack_root = (
+                Path(request["paths"]["artifacts"])
+                / "unpack"
+                / "rootfs"
+            )
+
+            (unpack_root / "bin").mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            (unpack_root / "etc" / "init.d").mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            (unpack_root / "lib").mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            busybox_path = unpack_root / "bin" / "busybox"
+            busybox_path.write_bytes(
+                b"\\x7fELF"
+                b"VERITAS-MOCK-ROOTFS"
+            )
+            busybox_path.chmod(0o755)
+
+            shell_path = unpack_root / "bin" / "sh"
+
+            if not shell_path.exists():
+                shell_path.symlink_to("busybox")
+
+            (unpack_root / "etc" / "passwd").write_text(
+                "root:x:0:0:root:/root:/bin/sh\\n",
+                encoding="utf-8",
+            )
+
+            startup_path = (
+                unpack_root
+                / "etc"
+                / "init.d"
+                / "rcS"
+            )
+            startup_path.write_text(
+                "#!/bin/sh\\nexit 0\\n",
+                encoding="utf-8",
+            )
+            startup_path.chmod(0o755)
+
+            emit(
+                "extraction_complete",
+                state="running",
+            )
+
         server = ThreadingHTTPServer(
             ("127.0.0.1", 0),
             FirmwareContentHandler,

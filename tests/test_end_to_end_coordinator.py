@@ -97,6 +97,7 @@ class EndToEndCoordinatorTests(unittest.TestCase):
                 experiment_id=experiment_id,
                 attempt=1,
                 requested_stages=(
+                    "unpack",
                     "emulate",
                     "endpoint-discovery",
                 ),
@@ -146,7 +147,16 @@ class EndToEndCoordinatorTests(unittest.TestCase):
                 result[
                     "independent_measurements"
                 ]["unpack"]["status"],
-                "not_attempted",
+                "true",
+            )
+
+            self.assertEqual(
+                len(
+                    result[
+                        "independent_measurements"
+                    ]["unpack"]["tree_sha256"]
+                ),
+                64,
             )
 
             self.assertEqual(
@@ -245,6 +255,11 @@ class EndToEndCoordinatorTests(unittest.TestCase):
                     "candidate_claims"
                 ]
             }
+
+            self.assertIn(
+                "extraction_complete",
+                claim_names,
+            )
 
             self.assertIn(
                 "candidate_boot_reported",

@@ -41,6 +41,11 @@ from veritas_core.lifecycle_watchdog import (
 from veritas_core.probe_orchestrator import (
     IndependentProbeOrchestrator,
 )
+from veritas_core.probes.unpack_validation import (
+    UnpackObservation,
+    validate_unpack_export,
+    write_unpack_evidence,
+)
 
 
 class RunCoordinatorError(RuntimeError):
@@ -581,6 +586,10 @@ class CandidateRunCoordinator:
             RemediationObservation | None
         ) = None
 
+        unpack_observation: (
+            UnpackObservation | None
+        ) = None
+
         runtime_error: dict[str, Any] | None = None
         endpoint_wait_error: str | None = None
 
@@ -739,6 +748,19 @@ class CandidateRunCoordinator:
                 except Exception:
                     pass
 
+        unpack_observation = validate_unpack_export(
+            contract_root=contract_root,
+            requested=(
+                "unpack"
+                in policy.requested_stages
+            ),
+        )
+
+        write_unpack_evidence(
+            contract_root=contract_root,
+            observation=unpack_observation,
+        )
+
         after_snapshot = (
             self.environment_collector.snapshot()
         )
@@ -797,6 +819,7 @@ class CandidateRunCoordinator:
 
         for event in observed_events:
             if event.get("event") in {
+                "extraction_complete",
                 "candidate_boot_reported",
                 "endpoint_reported",
             }:
@@ -844,9 +867,14 @@ class CandidateRunCoordinator:
             },
             "candidate_claims": candidate_claims,
             "independent_measurements": {
-                "unpack": _not_attempted(
-                    "Independent unpack validation has "
-                    "not yet been integrated"
+                "unpack": (
+                    _observation_to_dict(
+                        unpack_observation,
+                        missing_reason=(
+                            "No independent unpack "
+                            "observation was completed"
+                        ),
+                    )
                 ),
                 "boot": _not_attempted(
                     "Candidate boot claims are recorded "
@@ -966,6 +994,10 @@ class CandidateRunCoordinator:
                 "compute_cost_observation": (
                     "contract/artifacts/"
                     "compute-cost-observation.json"
+                ),
+                "unpack_observation": (
+                    "contract/artifacts/"
+                    "unpack-observation.json"
                 ),
                 "environment_before": (
                     "contract/artifacts/"

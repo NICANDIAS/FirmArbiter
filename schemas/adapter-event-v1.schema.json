@@ -25,6 +25,7 @@
       "enum": [
         "adapter_started",
         "candidate_started",
+        "extraction_complete",
         "candidate_boot_reported",
         "endpoint_reported",
         "heartbeat",
