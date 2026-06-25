@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:veritas:schema:run-request:1.0",
+  "title": "VERITAS Run Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_version",
+    "run",
+    "firmware",
+    "lifecycle",
+    "resources",
+    "runtime_grants",
+    "paths",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "experiment_id",
+        "run_id",
+        "adapter_id",
+        "attempt",
+        "created_at",
+        "requested_stages"
+      ],
+      "properties": {
+        "experiment_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "adapter_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requested_stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "unpack",
+              "emulate",
+              "static-analysis",
+              "dynamic-analysis",
+              "endpoint-discovery"
+            ]
+          }
+        }
+      }
+    },
+    "firmware": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "path",
+        "sha256",
+        "size_bytes",
+        "delivery_semantics",
+        "read_only"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "path": {
+          "const": "/veritas/input/firmware"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivery_semantics": {
+          "const": "opaque-original-bytes"
+        },
+        "read_only": {
+          "const": true
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_seconds",
+        "heartbeat_interval_seconds",
+        "heartbeat_timeout_seconds",
+        "shutdown_grace_seconds"
+      ],
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "heartbeat_interval_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "heartbeat_timeout_seconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 7200
+        },
+        "shutdown_grace_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_cores",
+        "memory_bytes",
+        "pids_limit"
+      ],
+      "properties": {
+        "cpu_cores": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1048576
+        },
+        "pids_limit": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "runtime_grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_as_root",
+        "network",
+        "requirements"
+      ],
+      "properties": {
+        "run_as_root": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "none",
+            "isolated",
+            "host"
+          ]
+        },
+        "requirements": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "kvm",
+              "loop-devices",
+              "device-mapper",
+              "tun-tap",
+              "net-admin",
+              "ptrace",
+              "nested-containers",
+              "full-privileged"
+            ]
+          }
+        }
+      }
+    },
+    "hints": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/architectureHint"
+        },
+        "vendor": {
+          "$ref": "#/$defs/vendorHint"
+        }
+      }
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace",
+        "artifacts",
+        "events",
+        "control"
+      ],
+      "properties": {
+        "workspace": {
+          "const": "/veritas/work"
+        },
+        "artifacts": {
+          "const": "/veritas/artifacts"
+        },
+        "events": {
+          "const": "/veritas/events/events.jsonl"
+        },
+        "control": {
+          "const": "/veritas/control"
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter_manifest_sha256",
+        "experiment_manifest_sha256"
+      ],
+      "properties": {
+        "adapter_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "experiment_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hintSource": {
+      "type": "string",
+      "enum": [
+        "corpus-manifest",
+        "independent-preflight",
+        "experiment-config"
+      ]
+    },
+    "architectureHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "enum": [
+            "arm",
+            "arm64",
+            "mips",
+            "mipsel",
+            "x86",
+            "x86_64",
+            "powerpc",
+            "unknown"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/hintSource"
+        }
+      }
+    },
+    "vendorHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/hintSource"
+        }
+      }
+    }
+  }
+}
