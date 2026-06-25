@@ -1,0 +1,53 @@
+schema_version: "1.0"
+
+adapter:
+  id: example-tool
+  display_name: Example Tool Adapter
+  description: Neutral example of a VERITAS Adapter Contract v1 package.
+  version: "0.1.0"
+  contract_version: "1.0"
+
+candidate:
+  name: Example Tool
+  license: Example-Licence
+  source:
+    type: git
+    repository: https://example.invalid/example-tool.git
+    commit: "0123456789abcdef0123456789abcdef01234567"
+    requested_ref: "v1.2.3"
+  patches:
+    - path: patches/0001-modern-compiler-compatibility.patch
+      sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      description: Compatibility patch required to compile with the pinned toolchain.
+
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+    - ubuntu:24.04@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+runtime:
+  run_as_root: true
+  network: host
+  requirements:
+    - loop-devices
+    - device-mapper
+    - tun-tap
+    - net-admin
+
+capabilities:
+  stages:
+    - unpack
+    - emulate
+    - endpoint-discovery
+  firmware_architectures:
+    - arm
+    - mips
+    - mipsel
+  endpoint_protocols:
+    - http
+    - https
+  hints:
+    architecture: optional
+    vendor: optional
