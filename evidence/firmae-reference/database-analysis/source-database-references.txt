@@ -1,0 +1,151 @@
+/home/ubuntu/Desktop/FirmAE/firmae.config:19:    PSQL_IP=172.17.0.1
+/home/ubuntu/Desktop/FirmAE/firmae.config:22:    PSQL_IP=127.0.0.1
+/home/ubuntu/Desktop/FirmAE/scripts/getArch.py:37:psql_ip = sys.argv[2]
+/home/ubuntu/Desktop/FirmAE/scripts/getArch.py:83:            database="firmware", user="firmadyne", password="firmadyne", host=psql_ip
+/home/ubuntu/Desktop/FirmAE/scripts/delete.sh:44:#Cleanup database:
+/home/ubuntu/Desktop/FirmAE/scripts/delete.sh:45:echo "Remove the database entries ..."
+/home/ubuntu/Desktop/FirmAE/scripts/delete.sh:46:psql -d firmware -U firmadyne -h $PSQL_IP -t -q -c "DELETE from image WHERE id=${IID};"
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:20:def query_(query, psql_ip):
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:23:            database="firmware", user="firmadyne", password="firmadyne", host=psql_ip
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:33:def get_iid(infile, psql_ip):
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:36:    image_id = query_(q, psql_ip)
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:44:def get_brand(infile, psql_ip):
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:47:    brand_id = query_(q, psql_ip)
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:51:        brand = query_(q, psql_ip)
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:60:def check_connection(psql_ip):
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:63:            database="firmware", user="firmadyne", password="firmadyne", host=psql_ip
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:73:    [infile, psql_ip] = sys.argv[2:4]
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:75:        print(get_iid(infile, psql_ip))
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:77:        print(get_brand(infile, psql_ip))
+/home/ubuntu/Desktop/FirmAE/scripts/util.py:79:        exit(check_connection(psql_ip))
+/home/ubuntu/Desktop/FirmAE/scripts/tar2db.py:10:psql_ip = ""
+/home/ubuntu/Desktop/FirmAE/scripts/tar2db.py:106:    global psql_ip
+/home/ubuntu/Desktop/FirmAE/scripts/tar2db.py:108:        database="firmware", user="firmadyne", password="firmadyne", host=psql_ip
+/home/ubuntu/Desktop/FirmAE/scripts/tar2db.py:130:    global psql_ip
+/home/ubuntu/Desktop/FirmAE/scripts/tar2db.py:139:            psql_ip = v
+/home/ubuntu/Desktop/FirmAE/run.sh:54:    echo `./scripts/util.py get_brand ${INFILE} ${PSQL_IP}`
+/home/ubuntu/Desktop/FirmAE/run.sh:91:      if ( ! ./scripts/util.py check_connection _ $PSQL_IP ); then
+/home/ubuntu/Desktop/FirmAE/run.sh:92:        echo -e "[\033[31m-\033[0m] docker container failed to connect to the hosts' postgresql!"
+/home/ubuntu/Desktop/FirmAE/run.sh:108:        ./sources/extractor/extractor.py $brand_arg -sql $PSQL_IP -np \
+/home/ubuntu/Desktop/FirmAE/run.sh:111:    IID=`./scripts/util.py get_iid $INFILE $PSQL_IP`
+/home/ubuntu/Desktop/FirmAE/run.sh:123:        ./sources/extractor/extractor.py $brand_arg -sql $PSQL_IP -np \
+/home/ubuntu/Desktop/FirmAE/run.sh:156:    ARCH=`./scripts/getArch.py ./images/$IID.tar.gz $PSQL_IP`
+/home/ubuntu/Desktop/FirmAE/run.sh:186:        python3 -u ./scripts/tar2db.py -i $IID -f ./images/$IID.tar.gz -h $PSQL_IP \
+/home/ubuntu/Desktop/FirmAE/run.sh:251:            ./analyses_all.sh $IID $BRAND $IP $PSQL_IP
+/home/ubuntu/Desktop/FirmAE/install.sh:13:# postgresql
+/home/ubuntu/Desktop/FirmAE/install.sh:14:sudo apt install -y postgresql
+/home/ubuntu/Desktop/FirmAE/install.sh:15:sudo /etc/init.d/postgresql restart
+/home/ubuntu/Desktop/FirmAE/install.sh:16:sudo -u postgres bash -c "psql -c \"CREATE USER firmadyne WITH PASSWORD 'firmadyne';\""
+/home/ubuntu/Desktop/FirmAE/install.sh:17:sudo -u postgres createdb -O firmadyne firmware
+/home/ubuntu/Desktop/FirmAE/install.sh:18:sudo -u postgres psql -d firmware < ./database/schema
+/home/ubuntu/Desktop/FirmAE/install.sh:19:echo "listen_addresses = '172.17.0.1,127.0.0.1,localhost'" | sudo -u postgres tee --append /etc/postgresql/*/main/postgresql.conf
+/home/ubuntu/Desktop/FirmAE/install.sh:20:echo "host all all 172.17.0.1/24 trust" | sudo -u postgres tee --append /etc/postgresql/*/main/pg_hba.conf
+/home/ubuntu/Desktop/FirmAE/docker-helper.py:95:                    logging.error("[-] %s container failed to connect to the hosts' postgresql", docker_name)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:25:            self.database = psycopg2.connect(database="firmware", user="firmadyne",
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:29:            self.database = None
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:89:        if self.database:
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:91:                cur = self.database.cursor()
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:119:                        logger.info("Inserted database entry for brand: %d!" % brand_id)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:124:                    logger.info("Inserted database entry for image: %d!" % image_id)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:131:                        "Found existing database entry for image: %d!" % image_id)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:148:                        "Inserted database entry for product: %d!" % product_id)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:152:                    logger.info("Updated database entry for product: %d!" % product_id)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:154:                self.database.commit()
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:156:                self.database.rollback()
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:157:                logger.warning("Database connection exception: %s!" % e)
+/home/ubuntu/Desktop/FirmAE/sources/scraper/firmware/pipelines.py:160:                if self.database and cur:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:56:        self.database = server
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:221:    database = None
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:238:        # Database connection
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:239:        if self.extractor.database:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:241:            self.database = psycopg2.connect(database="firmware",
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:244:                                             host=self.extractor.database)
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:262:        if self.database:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:263:            self.database.close()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:281:        if not self.database:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:286:            cur = self.database.cursor()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:307:            self.database.commit()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:310:            self.database.rollback()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:316:            self.printf(">> Database Image ID: %s" % image_id[0])
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:349:        if self.database and kernel_done and self.extractor.do_kernel:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:350:            self.update_database("kernel_extracted", "True")
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:352:        if self.database and rootfs_done and self.extractor.do_rootfs:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:353:            self.update_database("rootfs_extracted", "True")
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:357:    def update_database(self, field, value):
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:359:        Update a given field in the database.
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:362:        if self.database:
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:364:                cur = self.database.cursor()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:367:                self.database.commit()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:371:                self.database.rollback()
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:645:                    self.update_database("kernel_version", desc)
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:737:def psql_check(psql_ip):
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:740:        psycopg2.connect(database="firmware",
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:743:                         host=psql_ip)
+/home/ubuntu/Desktop/FirmAE/sources/extractor/extractor.py:782:    if arg.debug or psql_check(arg.sql):
+/home/ubuntu/Desktop/FirmAE/init.sh:5:# Start database
+/home/ubuntu/Desktop/FirmAE/init.sh:6:sudo service postgresql restart
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/core/exploit/utils.py:221:    :return str: vendor name from oui.dat database
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/core/http/http_client.py:47:        except (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema):
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/core/http/http_client.py:64:        :return str: full target url with correct schema
+/home/ubuntu/Desktop/FirmAE/analyses/fuzzer/fuzzer.py:58:# ST:urn:schemas-upnp-org:service:WANIPConnection:1;{};ls\r\n".format(cmd)
+/home/ubuntu/Desktop/FirmAE/analyses/fuzzer/login.py:118:        payload = '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Login xmlns="http://purenetworks.com/HNAP1/"><Action>request</Action><Username>Admin</Username><LoginPassword></LoginPassword><Captcha></Captcha></Login></soap:Body></soap:Envelope>'
+/home/ubuntu/Desktop/FirmAE/analyses/fuzzer/login.py:132:            '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Login xmlns="http://purenetworks.com/HNAP1/"><Action>login</Action><Username>Admin</Username><LoginPassword>'
+/home/ubuntu/Desktop/FirmAE/analyses/analyses_all.sh:23:PSQL_IP=${4}
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/tests/generic/upnp/test_ssdp_msearch.py:24:        b"OPT: \"http://schemas.upnp.org/upnp/1/0/\"; ns=01\r\n"
+/home/ubuntu/Desktop/FirmAE/database/schema:2:-- PostgreSQL database dump
+/home/ubuntu/Desktop/FirmAE/database/schema:6:-- Name: brand; Type: TABLE; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:18:-- Name: brand_id_seq; Type: SEQUENCE; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:32:-- Name: brand_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:39:-- Name: image; Type: TABLE; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:58:-- Name: image_id_seq; Type: SEQUENCE; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:72:-- Name: image_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:79:-- Name: object; Type: TABLE; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:91:-- Name: object_id_seq; Type: SEQUENCE; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:105:-- Name: object_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:112:-- Name: object_to_image; Type: TABLE; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:129:-- Name: object_to_image_id_seq; Type: SEQUENCE; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:143:-- Name: object_to_image_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:150:-- Name: product; Type: TABLE; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:173:-- Name: product_id_seq; Type: SEQUENCE; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:187:-- Name: product_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:194:-- Name: id; Type: DEFAULT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:201:-- Name: id; Type: DEFAULT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:208:-- Name: id; Type: DEFAULT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:215:-- Name: id; Type: DEFAULT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:222:-- Name: id; Type: DEFAULT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:229:-- Name: brand_name_key; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:237:-- Name: brand_pkey; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:245:-- Name: image_pkey; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:253:-- Name: object_hash_key; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:261:-- Name: object_pkey; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:269:-- Name: object_to_image_oid_iid_filename_key; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:277:-- Name: object_to_image_pk; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:285:-- Name: product_iid_product_version_build_key; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:293:-- Name: product_pkey; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:301:-- Name: uniq_hash; Type: CONSTRAINT; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:309:-- Name: idx_object_hash; Type: INDEX; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:316:-- Name: object_to_image_iid_idx; Type: INDEX; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:323:-- Name: object_to_image_iid_idx1; Type: INDEX; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:330:-- Name: object_to_image_oid_idx; Type: INDEX; Schema: public; Owner: firmadyne; Tablespace:
+/home/ubuntu/Desktop/FirmAE/database/schema:337:-- Name: image_brand_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:345:-- Name: object_to_image_iid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:353:-- Name: object_to_image_oid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:361:-- Name: product_iid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:369:-- Name: brand; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:378:-- Name: brand_id_seq; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:387:-- Name: image; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:396:-- Name: image_id_seq; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:405:-- Name: object; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:414:-- Name: object_id_seq; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:423:-- Name: object_to_image; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:432:-- Name: object_to_image_id_seq; Type: ACL; Schema: public; Owner: firmadyne
+/home/ubuntu/Desktop/FirmAE/database/schema:441:-- PostgreSQL database dump complete
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/zyxel/d1000_rce.py:43:                "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/zyxel/d1000_wifi_password_disclosure.py:50:            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/huawei/hg530_hg520b_password_disclosure.py:34:                "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/huawei/hg530_hg520b_password_disclosure.py:65:                "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/cisco/secure_acs_bypass.py:38:                '<SOAP-ENV:Envelope SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" '
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/cisco/secure_acs_bypass.py:39:                'xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" '
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/cisco/secure_acs_bypass.py:40:                'xmlns:xsi="http://www.w3.org/1999/XMLSchema-instance" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" '
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/cisco/secure_acs_bypass.py:41:                'xmlns:xsd="http://www.w3.org/1999/XMLSchema">' + '\r\n'
+/home/ubuntu/Desktop/FirmAE/analyses/routersploit/routersploit/modules/exploits/routers/dlink/dir_815_850l_rce.py:36:            "ST:urn:schemas-upnp-org:service:WANIPConnection:1;{};ls\r\n".format(cmd) +

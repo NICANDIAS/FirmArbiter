@@ -1,0 +1,1 @@
+brand:firmadyne,image:firmadyne,object:firmadyne,object_to_image:firmadyne,product:firmadyne

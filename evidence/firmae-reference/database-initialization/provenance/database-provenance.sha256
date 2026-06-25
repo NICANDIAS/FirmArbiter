@@ -1,0 +1,5 @@
+f6004d9343f7f26143342a3f46f3536ffae940370ffda329e3d0ebc3f2c2ac0a  /var/lib/veritas/firmae/provenance/database-schema.sha256
+f063f61c5781812ffd6527870b32f60529fabdef9042260c03959746415acc3c  /var/lib/veritas/firmae/provenance/postgresql-version.txt
+f3b4a1f349cc2f2de05072dae051492418fb272833472ec66fc4235c54704a93  /var/lib/veritas/firmae/provenance/database-tables.txt
+3a6a680a4ac84b3b2c184d222dc9b796f46a6e331949b1b6a5a1d57a24d5eda6  /var/lib/veritas/firmae/provenance/database-table-owners.txt
+14af1b07b3adcac7903ebe7a57034ee9c9cde7c7d2ae666c33578f243c8e3520  /var/lib/veritas/firmae/provenance/database-contract.txt

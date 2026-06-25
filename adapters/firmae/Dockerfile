@@ -67,6 +67,15 @@ RUN test "$(sha256sum \
 
 RUN mkdir -p /opt/veritas-adapter
 
+COPY scripts/database_control.sh \
+    /usr/local/bin/veritas-firmae-database
+
+RUN chmod 0755 \
+        /usr/local/bin/veritas-firmae-database \
+    && test -s "${FIRMAE_HOME}/database/schema" \
+    && sha256sum "${FIRMAE_HOME}/database/schema" \
+        > /opt/veritas-adapter/provenance/firmae-database-schema.sha256
+
 COPY entrypoint.py     /opt/veritas-adapter/entrypoint.py
 
 RUN chmod 0755     /opt/veritas-adapter/entrypoint.py
