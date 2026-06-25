@@ -82,6 +82,20 @@ class DockerAdapterSupervisor:
         except DockerBackendError:
             return False
 
+    def exit_code_if_exited(self) -> int | None:
+        """
+        Return the container exit code only after it has stopped.
+        """
+        if self.container is None:
+            return None
+
+        if self.container_running:
+            return None
+
+        return self.backend.exit_code(
+            self.container.container_id
+        )
+
     def start(self) -> None:
         if self.container is not None:
             raise DockerSupervisorError(
