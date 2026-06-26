@@ -1,0 +1,11 @@
+{
+  "architecture_counts": {
+    "armel": 131
+  },
+  "candidate_files_examined": 153,
+  "native_firmae_result": null,
+  "rootfs_entries": 2549,
+  "selected_architecture": "armel",
+  "selected_evidence_count": 131,
+  "status": "detected-by-adapter-fallback"
+}

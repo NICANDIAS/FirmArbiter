@@ -1,0 +1,26 @@
+{
+  "adapter_id": "firmae",
+  "architecture": "arm",
+  "bits": 32,
+  "detected_at": "2026-06-26T01:14:07.255688Z",
+  "detection": {
+    "architecture_counts": {
+      "armel": 131
+    },
+    "candidate_files_examined": 153,
+    "method": "adapter-elf-consensus-fallback",
+    "native_firmae_result": null,
+    "rootfs_entries": 2549,
+    "selected_architecture": "armel",
+    "selected_evidence_count": 131
+  },
+  "endianness": "little",
+  "evidence": {
+    "architecture_candidates_sha256": "7d03f99f3627834bf4249ac7fb52bffbde678ea73d393337c252f095452f4b26",
+    "rootfs_file_list_sha256": "f6e02179bed3cc7978366b50861f1a3818b94ae1e58a04c76fb3a21e29486a3e"
+  },
+  "firmae_architecture": "armel",
+  "operation": "architecture-identification",
+  "schema_version": "1.0",
+  "supported_by_pinned_firmae": true
+}
