@@ -1,0 +1,10 @@
+05129ac2744ce98461e9d45fe7e7d895eea4ac7ce0d477f2cdcbff26ba208ec8  evidence/firmae-reference/first-firmware-network-inference/current-init.txt
+fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa  evidence/firmae-reference/first-firmware-network-inference/dhcp-claim.txt
+a2541d8fa553f65408fabca9c867cfff4615467377962ff089b97c526e618c6a  evidence/firmae-reference/first-firmware-network-inference/full-serial-log.sha256
+ab23b2e6db3cb98ba1752be2371a5c8c41fac2e00923832de40c96ce84ac8d4d  evidence/firmae-reference/first-firmware-network-inference/generated-run.sh
+37d7a80604871e579850a658c7add2ae7557d0c6abcc9b31ecddc4424207eba3  evidence/firmae-reference/first-firmware-network-inference/inferred-ip-0.txt
+6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b  evidence/firmae-reference/first-firmware-network-inference/ip-count.txt
+a2b6539fa4fdcc8119fa52dfe4f1fe82570fe9ad25bcb308330266b495cd5c0f  evidence/firmae-reference/first-firmware-network-inference/network-inference-summary.json
+daad8fb3daf7a5daea1d499392fa5dc885ea03e46a7467099557057dd7c0e7be  evidence/firmae-reference/first-firmware-network-inference/network-key-lines.txt
+a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74  evidence/firmae-reference/first-firmware-network-inference/ping-claim.txt
+a8945a5b3a4d5442957b3e7816f3384f07af3ba34d599d0e68e85140482c28d8  evidence/firmae-reference/first-firmware-network-inference/serial-log-tail.txt

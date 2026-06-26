@@ -1,0 +1,27 @@
+{
+  "adapter_id": "firmae",
+  "addresses": [
+    "192.168.0.1"
+  ],
+  "artifacts": {
+    "run_script_sha256": "ab23b2e6db3cb98ba1752be2371a5c8c41fac2e00923832de40c96ce84ac8d4d",
+    "serial_log_sha256": "813a172f317c36448c52787176246f28eb6cf4fac0892c6ee7ba66b99e494f48",
+    "serial_log_size_bytes": 941815
+  },
+  "candidate_claims": {
+    "dhcp": "false",
+    "ping": "true",
+    "web": null
+  },
+  "firmae_image_id": 1,
+  "observations": [
+    "FirmAE completed network inference without infrastructure errors.",
+    "Firmware responded to FirmAE's ping test.",
+    "FirmAE did not establish a web-service claim.",
+    "Guest serial output contains iptables NAT-table warnings."
+  ],
+  "operation": "network-inference",
+  "recorded_at": "2026-06-26T03:09:21.940325Z",
+  "schema_version": "1.0",
+  "selected_init": "/firmadyne/preInit.sh"
+}
