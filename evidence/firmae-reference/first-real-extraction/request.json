@@ -1,0 +1,54 @@
+{
+  "contract_version": "1.0",
+  "firmware": {
+    "case_id": "first-real-firmware",
+    "delivery_semantics": "opaque-original-bytes",
+    "path": "/veritas/input/firmware",
+    "read_only": true,
+    "sha256": "43fa019667a8af43dee18c901beac5206dfe00cda3c2708df1049cc3d2675263",
+    "size_bytes": 13581763
+  },
+  "hints": {
+    "vendor": {
+      "source": "experiment-config",
+      "value": "dlink"
+    }
+  },
+  "integrity": {
+    "adapter_manifest_sha256": "a2ce2066fe36b0af04f949cbe55863f3053a901c3664e9628eac2b40c0e0b130",
+    "experiment_manifest_sha256": "e71b4a55095caac9314c2f0718e73a05b79b87b0b2feacd33bab4c62b6156744"
+  },
+  "lifecycle": {
+    "heartbeat_interval_seconds": 5,
+    "heartbeat_timeout_seconds": 20,
+    "shutdown_grace_seconds": 60,
+    "timeout_seconds": 1800
+  },
+  "paths": {
+    "artifacts": "/veritas/artifacts",
+    "control": "/veritas/control",
+    "events": "/veritas/events/events.jsonl",
+    "workspace": "/veritas/work"
+  },
+  "resources": {
+    "cpu_cores": 2,
+    "memory_bytes": 4294967296,
+    "pids_limit": 2048
+  },
+  "run": {
+    "adapter_id": "firmae",
+    "attempt": 3,
+    "created_at": "2026-06-26T00:44:14.594204Z",
+    "experiment_id": "first-firmae-extraction",
+    "requested_stages": [
+      "unpack"
+    ],
+    "run_id": "first-extraction.first-real-firmware.firmae.attempt-3"
+  },
+  "runtime_grants": {
+    "network": "none",
+    "requirements": [],
+    "run_as_root": true
+  },
+  "schema_version": "1.0"
+}

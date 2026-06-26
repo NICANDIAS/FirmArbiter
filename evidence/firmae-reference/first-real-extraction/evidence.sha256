@@ -1,0 +1,11 @@
+3b9eab1e804499ecb904ea363c0862b277d7a5a0819061d7bd21e9ae9bef5582  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/events.jsonl
+e71b4a55095caac9314c2f0718e73a05b79b87b0b2feacd33bab4c62b6156744  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/experiment-manifest.json
+4ad6eb84c294aacbe183d473b8d033401dfd0f7498297aed63ca4b131cce9c54  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/image-inspect.json
+45af5b1fca23c5ba9617f0aff14d881b7f4ca1bb66d27cf2b43cc6c5e3aa7598  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/large-artifact-hashes.sha256
+f787fafc21d30626955584f2e8624df243f8bc60186d0422067b896f527d52a8  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/large-artifact-sizes.tsv
+ef9e2b8d477a9df46281af8fe1ac938388294848ea0435b66f289c00f0dd8479  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/logs/kernel-extractor.log
+df7bd5ce52d122d2cc924e7d31c6a50a6cef653209cadc46b320c53a43ee4f87  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/logs/rootfs-extractor.log
+c11eba2e7b38218d7b9f0f3ea48464fc532751e729f90a082e1ed29001f2ab23  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/provenance/apt-direct-lock.tsv
+8ed70816983d254bae3b229aa979faa7ec998e184bd3f0f1b63c14bc0a621ddd  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/provenance/apt-installed-lock.tsv
+4a09e52b7f6bf9dba753555f753032bc7bd85f8cf45b2bd474aead7746f317d5  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/request.json
+7605ef256ec1b42ccc35c0099ecc80a9d20a5f1d328ae2120c8a2c734689c761  /home/ubuntu/veritas_v10/evidence/firmae-reference/first-real-extraction/unpack-metadata.json

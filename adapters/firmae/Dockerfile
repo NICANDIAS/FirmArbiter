@@ -65,6 +65,16 @@ RUN test "$(sha256sum \
     && printf '%s\n' "${FIRMAE_PATCH_SHA256}" \
         > "${FIRMAE_HOME}/.veritas_patch_sha256"
 
+RUN test -f "${FIRMAE_HOME}/core/unstuff" \
+    && install \
+        -o root \
+        -g root \
+        -m 0755 \
+        "${FIRMAE_HOME}/core/unstuff" \
+        /usr/local/bin/unstuff \
+    && sha256sum /usr/local/bin/unstuff \
+        > /opt/veritas-adapter/provenance/unstuff.sha256
+
 RUN mkdir -p /opt/veritas-adapter
 
 COPY scripts/database_control.sh \
