@@ -125,6 +125,9 @@ class AdapterEventStream:
             "endpoint": "endpoint_reported",
             "error": "error",
             "outcome": "adapter_stopped",
+            "stage": "stage_completed",
+            "stage_outcome": "stage_completed",
+            "message": "stage_completed",
         }
 
         for field_name, permitted_event in event_specific_fields.items():

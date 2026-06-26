@@ -91,6 +91,8 @@ def measure_endpoint_stability(
     interval_seconds: float,
     timeout_seconds: float,
     should_continue: Callable[[], bool] | None = None,
+    reachability_probe: Callable[..., Any] | None = None,
+    http_snapshot_probe: Callable[..., Any] | None = None,
 ) -> StabilityObservation:
     """
     Repeatedly measure a structured endpoint claim.
@@ -101,6 +103,15 @@ def measure_endpoint_stability(
     `should_continue` allows the lifecycle supervisor to stop sampling when
     the adapter or candidate is no longer alive.
     """
+
+    # Resolve defaults at call time so unittest patches and neutral
+    # namespace-probe injection both work correctly.
+    if reachability_probe is None:
+        reachability_probe = probe_endpoint_event
+
+    if http_snapshot_probe is None:
+        http_snapshot_probe = capture_http_snapshot
+
     if event.get("event") != "endpoint_reported":
         raise StabilityProbeError(
             "Stability measurement requires an endpoint_reported event"
@@ -179,7 +190,7 @@ def measure_endpoint_stability(
             break
 
         try:
-            reachability = probe_endpoint_event(
+            reachability = reachability_probe(
                 event,
                 timeout_seconds=timeout_seconds,
                 attempts=1,
@@ -194,7 +205,7 @@ def measure_endpoint_stability(
             error_message = reachability.error_message
 
             if available and protocol in {"http", "https"}:
-                snapshot = capture_http_snapshot(
+                snapshot = http_snapshot_probe(
                     event,
                     timeout_seconds=timeout_seconds,
                 )

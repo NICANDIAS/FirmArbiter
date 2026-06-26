@@ -117,16 +117,30 @@ def main() -> int:
             "candidate_boot_reported",
             state="running",
         )
+        emit(
+            "stage_completed",
+            state="running",
+            stage="emulate",
+            stage_outcome="succeeded",
+            message="Mock candidate runtime reported ready",
+        )
 
         # 192.0.2.0/24 is reserved for documentation and testing.
         emit(
             "endpoint_reported",
-            state="waiting_for_shutdown",
+            state="running",
             endpoint={
                 "host": "192.0.2.10",
                 "port": 8080,
                 "protocol": "http",
             },
+        )
+        emit(
+            "stage_completed",
+            state="waiting_for_shutdown",
+            stage="endpoint-discovery",
+            stage_outcome="succeeded",
+            message="Mock endpoint discovery completed with 1 claim",
         )
 
         heartbeat_interval = max(

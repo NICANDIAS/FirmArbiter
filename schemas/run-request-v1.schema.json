@@ -137,6 +137,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 3600
+        },
+        "boot_wait_timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400
         }
       }
     },

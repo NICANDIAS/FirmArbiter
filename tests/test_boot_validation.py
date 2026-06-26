@@ -226,6 +226,27 @@ class BootValidationTests(unittest.TestCase):
                 "not_attempted",
             )
 
+    def test_blocked_emulation_uses_supplied_reason(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            result = validate_boot_evidence(
+                contract_root=Path(temporary),
+                requested=False,
+                candidate_events=[],
+                lifecycle=None,
+                authenticity_records=[],
+                not_attempted_reason=(
+                    "Emulation was blocked by unpack failure"
+                ),
+            )
+
+            self.assertEqual(result.status, "not_attempted")
+            self.assertEqual(
+                result.reason,
+                "Emulation was blocked by unpack failure",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

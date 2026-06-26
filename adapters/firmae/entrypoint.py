@@ -11,6 +11,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -25,6 +26,24 @@ CONTRACT_VERSION = "1.0"
 DATABASE_CONTROLLER = Path(
     "/usr/local/bin/veritas-firmae-database"
 )
+
+DEPENDENCY_DOCTOR = Path(
+    "/usr/local/bin/veritas-firmae-dependency-doctor"
+)
+
+FIRMAE_DATABASE_PORT = os.environ.get(
+    "VERITAS_FIRMAE_PGPORT",
+    "55432",
+)
+
+# FirmAE helper scripts invoke psql directly. Export the private
+# database connection so every child process uses the same isolated
+# PostgreSQL endpoint instead of the host PostgreSQL on port 5432.
+os.environ["VERITAS_FIRMAE_PGPORT"] = (
+    FIRMAE_DATABASE_PORT
+)
+os.environ["PGHOST"] = "127.0.0.1"
+os.environ["PGPORT"] = FIRMAE_DATABASE_PORT
 
 PREPARE_IMAGE_HELPER = Path(
     "/usr/local/bin/veritas-firmae-prepare-image"
@@ -322,6 +341,26 @@ def load_and_validate_request(
             "must be a positive integer"
         )
 
+    boot_wait_timeout = lifecycle.get(
+        "boot_wait_timeout_seconds"
+    )
+
+    if (
+        boot_wait_timeout is not None
+        and (
+            not isinstance(
+                boot_wait_timeout,
+                (int, float),
+            )
+            or isinstance(boot_wait_timeout, bool)
+            or boot_wait_timeout <= 0
+        )
+    ):
+        raise ContractError(
+            "lifecycle.boot_wait_timeout_seconds "
+            "must be a positive number"
+        )
+
     return request
 
 
@@ -439,6 +478,70 @@ class HeartbeatWorker:
             self._stop_event.wait(0.05)
 
 
+def run_dependency_doctor(
+    *,
+    artifacts_path: Path,
+) -> None:
+    report_path = artifacts_path / "dependency-check.json"
+
+    artifacts_path.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    completed = subprocess.run(
+        [
+            str(DEPENDENCY_DOCTOR),
+            "--output",
+            str(report_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if completed.returncode == 0:
+        return
+
+    detail = completed.stderr.strip()
+
+    if report_path.is_file():
+        try:
+            report = read_json_object(report_path)
+        except Exception:
+            report = {}
+
+        missing = []
+
+        for key in (
+            "missing_commands",
+            "missing_files",
+            "missing_python_imports",
+        ):
+            values = report.get(key, [])
+
+            if isinstance(values, list):
+                missing.extend(
+                    str(value)
+                    for value in values
+                )
+
+        if missing:
+            detail = "missing: " + ", ".join(
+                sorted(set(missing))
+            )
+
+    raise AdapterOperationalError(
+        "FIRMAE_DEPENDENCY_CHECK_FAILED",
+        "candidate_setup",
+        (
+            "FirmAE runtime dependency validation failed"
+            + (f" ({detail})" if detail else "")
+            + "; inspect /veritas/artifacts/dependency-check.json"
+        ),
+    )
+
+
 def run_database_command(action: str) -> None:
     if not DATABASE_CONTROLLER.is_file():
         raise AdapterOperationalError(
@@ -474,6 +577,76 @@ def run_database_command(action: str) -> None:
 
 
 
+
+class ConsoleMirror:
+    """Continuously export the persistent guest serial console."""
+
+    def __init__(
+        self,
+        *,
+        source_path: Path,
+        destination_path: Path,
+    ) -> None:
+        self.source_path = source_path
+        self.destination_path = destination_path
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="firmae-console-mirror",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self.destination_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        self.destination_path.write_bytes(b"")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._thread.join(timeout=10)
+        self._copy_available()
+
+    def _copy_available(self) -> None:
+        if not self.source_path.is_file():
+            return
+
+        destination_size = (
+            self.destination_path.stat().st_size
+            if self.destination_path.is_file()
+            else 0
+        )
+        source_size = self.source_path.stat().st_size
+
+        if source_size < destination_size:
+            self.destination_path.write_bytes(b"")
+            destination_size = 0
+
+        if source_size == destination_size:
+            return
+
+        with self.source_path.open("rb") as source:
+            source.seek(destination_size)
+
+            with self.destination_path.open("ab") as destination:
+                shutil.copyfileobj(
+                    source,
+                    destination,
+                    length=1024 * 1024,
+                )
+                destination.flush()
+                os.fsync(destination.fileno())
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(0.25):
+            try:
+                self._copy_available()
+            except OSError:
+                continue
+
+
 class RuntimeController:
     """Own the persistent FirmAE/QEMU subprocess."""
 
@@ -482,10 +655,12 @@ class RuntimeController:
         process: subprocess.Popen[str],
         log_handle: Any,
         log_path: Path,
+        console_mirror: ConsoleMirror,
     ) -> None:
         self._process = process
         self._log_handle = log_handle
         self.log_path = log_path
+        self._console_mirror = console_mirror
         self._closed = False
 
     @classmethod
@@ -494,6 +669,8 @@ class RuntimeController:
         *,
         environment: dict[str, str],
         log_path: Path,
+        console_source_path: Path,
+        console_export_path: Path,
     ) -> "RuntimeController":
         if not PERSISTENT_RUNTIME_HELPER.is_file():
             raise AdapterOperationalError(
@@ -516,6 +693,12 @@ class RuntimeController:
             buffering=1,
         )
 
+        console_mirror = ConsoleMirror(
+            source_path=console_source_path,
+            destination_path=console_export_path,
+        )
+        console_mirror.start()
+
         try:
             process = subprocess.Popen(
                 [str(PERSISTENT_RUNTIME_HELPER)],
@@ -525,6 +708,7 @@ class RuntimeController:
                 env=environment,
             )
         except Exception:
+            console_mirror.stop()
             log_handle.close()
             raise
 
@@ -532,6 +716,7 @@ class RuntimeController:
             process=process,
             log_handle=log_handle,
             log_path=log_path,
+            console_mirror=console_mirror,
         )
 
     @property
@@ -551,6 +736,7 @@ class RuntimeController:
 
     def record_unexpected_exit(self) -> int:
         return_code = self._process.wait()
+        self._console_mirror.stop()
         self._close_log()
         return return_code
 
@@ -573,6 +759,7 @@ class RuntimeController:
                     timeout=10,
                 )
 
+        self._console_mirror.stop()
         self._close_log()
 
         if return_code != 0:
@@ -612,6 +799,34 @@ def read_json_object(path: Path) -> dict[str, Any]:
         )
 
     return document
+
+
+def unpack_failure_message(
+    artifacts_path: Path,
+    return_code: int,
+) -> str:
+    """Return a bounded candidate-stage failure description."""
+    error_path = artifacts_path / "unpack-error.json"
+
+    if error_path.is_file():
+        try:
+            document = read_json_object(error_path)
+            message = document.get("message")
+
+            if isinstance(message, str) and message.strip():
+                return message.strip()[:4000]
+        except (
+            OSError,
+            ValueError,
+            json.JSONDecodeError,
+            AdapterOperationalError,
+        ):
+            pass
+
+    return (
+        "FirmAE extraction completed without a usable root "
+        f"filesystem (helper return code {return_code})"
+    )
 
 
 def replace_directory_with_symlink(
@@ -746,6 +961,440 @@ def run_checked_helper(
                 f"{completed.returncode}; inspect {log_path}"
             ),
         )
+
+
+
+def _safe_archive_member_path(
+    name: str,
+) -> PurePosixPath | None:
+    path = PurePosixPath(name)
+
+    if path.is_absolute() or ".." in path.parts:
+        raise AdapterOperationalError(
+            "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+            "candidate_execution",
+            f"Unsafe rootfs archive member path: {name!r}",
+        )
+
+    cleaned_parts = tuple(
+        part
+        for part in path.parts
+        if part not in {"", "."}
+    )
+
+    if not cleaned_parts:
+        return None
+
+    return PurePosixPath(*cleaned_parts)
+
+
+def _ensure_real_directory(
+    root: Path,
+    relative_parts: tuple[str, ...],
+) -> Path:
+    current = root
+
+    for part in relative_parts:
+        current = current / part
+
+        if current.exists() or current.is_symlink():
+            if current.is_symlink() or not current.is_dir():
+                raise AdapterOperationalError(
+                    "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+                    "candidate_execution",
+                    (
+                        "Rootfs archive attempts to traverse "
+                        f"a non-directory path: {current}"
+                    ),
+                )
+        else:
+            current.mkdir(mode=0o755)
+
+    return current
+
+
+def _normalise_validation_copy_mode(
+    *,
+    original_mode: int,
+    directory: bool,
+) -> tuple[int, bool]:
+    """
+    Preserve candidate mode bits while ensuring the independent host-side
+    validator can traverse directories and read regular files.
+
+    This policy is applied only to the exported validation copy. The
+    canonical rootfs archive and FirmAE's emulation filesystem are not
+    modified.
+    """
+    original = original_mode & 0o7777
+    required = 0o555 if directory else 0o444
+    normalised = original | required
+    return normalised, normalised != original
+
+
+def export_rootfs_tree(
+    *,
+    rootfs_archive: Path,
+    artifacts_path: Path,
+    max_members: int = 500000,
+    max_regular_bytes: int = 8 * 1024 * 1024 * 1024,
+) -> None:
+    export_parent = artifacts_path / "unpack"
+    export_path = export_parent / "rootfs"
+    temporary_path = export_parent / ".rootfs.tmp"
+    report_path = export_parent / "export-metadata.json"
+
+    if temporary_path.exists():
+        shutil.rmtree(temporary_path)
+
+    export_parent.mkdir(parents=True, exist_ok=True)
+    temporary_path.mkdir(mode=0o755)
+
+    source_archive_sha256_before = sha256_file(
+        rootfs_archive
+    )
+
+    member_count = 0
+    total_regular_bytes = 0
+    regular_files = 0
+    directories = 0
+    symlinks = 0
+    hardlinks = 0
+    skipped_special = 0
+    permission_normalised_directories = 0
+    permission_normalised_files = 0
+    deferred_hardlinks: list[
+        tuple[Path, PurePosixPath]
+    ] = []
+
+    try:
+        with tarfile.open(
+            rootfs_archive,
+            mode="r:*",
+        ) as archive:
+            for member in archive:
+                member_count += 1
+
+                if member_count > max_members:
+                    raise AdapterOperationalError(
+                        "FIRMAE_ROOTFS_EXPORT_LIMIT_EXCEEDED",
+                        "candidate_execution",
+                        (
+                            "Rootfs archive exceeds the member "
+                            f"limit of {max_members}"
+                        ),
+                    )
+
+                if member.isreg():
+                    total_regular_bytes += int(
+                        member.size
+                    )
+
+                    if (
+                        total_regular_bytes
+                        > max_regular_bytes
+                    ):
+                        raise AdapterOperationalError(
+                            "FIRMAE_ROOTFS_EXPORT_LIMIT_EXCEEDED",
+                            "candidate_execution",
+                            (
+                                "Rootfs archive exceeds the "
+                                "regular-file byte limit of "
+                                f"{max_regular_bytes}"
+                            ),
+                        )
+
+                relative = _safe_archive_member_path(
+                    member.name
+                )
+
+                if relative is None:
+                    continue
+
+                destination = temporary_path.joinpath(
+                    *relative.parts
+                )
+                _ensure_real_directory(
+                    temporary_path,
+                    tuple(relative.parts[:-1]),
+                )
+
+                if member.isdir():
+                    if (
+                        destination.exists()
+                        or destination.is_symlink()
+                    ):
+                        if (
+                            destination.is_symlink()
+                            or not destination.is_dir()
+                        ):
+                            raise AdapterOperationalError(
+                                "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+                                "candidate_execution",
+                                (
+                                    "Directory member collides with "
+                                    f"another entry: {relative}"
+                                ),
+                            )
+                    else:
+                        destination.mkdir(mode=0o755)
+
+                    directory_mode, changed = (
+                        _normalise_validation_copy_mode(
+                            original_mode=member.mode,
+                            directory=True,
+                        )
+                    )
+                    os.chmod(destination, directory_mode)
+                    permission_normalised_directories += int(
+                        changed
+                    )
+
+                    directories += 1
+                    continue
+
+                if member.isreg():
+                    if (
+                        destination.exists()
+                        or destination.is_symlink()
+                    ):
+                        if destination.is_dir():
+                            raise AdapterOperationalError(
+                                "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+                                "candidate_execution",
+                                (
+                                    "Regular file collides with a "
+                                    f"directory: {relative}"
+                                ),
+                            )
+                        destination.unlink()
+
+                    source = archive.extractfile(member)
+
+                    if source is None:
+                        raise AdapterOperationalError(
+                            "FIRMAE_ROOTFS_EXPORT_FAILED",
+                            "candidate_execution",
+                            (
+                                "Could not read rootfs archive "
+                                f"member: {relative}"
+                            ),
+                        )
+
+                    flags = (
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_TRUNC
+                    )
+
+                    if hasattr(os, "O_NOFOLLOW"):
+                        flags |= os.O_NOFOLLOW
+
+                    file_mode, changed = (
+                        _normalise_validation_copy_mode(
+                            original_mode=member.mode,
+                            directory=False,
+                        )
+                    )
+
+                    descriptor = os.open(
+                        destination,
+                        flags,
+                        file_mode or 0o444,
+                    )
+
+                    with source, os.fdopen(
+                        descriptor,
+                        "wb",
+                    ) as output:
+                        shutil.copyfileobj(
+                            source,
+                            output,
+                            length=1024 * 1024,
+                        )
+
+                    os.chmod(destination, file_mode or 0o444)
+                    permission_normalised_files += int(changed)
+
+                    regular_files += 1
+                    continue
+
+                if member.issym():
+                    if (
+                        destination.exists()
+                        or destination.is_symlink()
+                    ):
+                        if destination.is_dir():
+                            raise AdapterOperationalError(
+                                "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+                                "candidate_execution",
+                                (
+                                    "Symlink collides with a "
+                                    f"directory: {relative}"
+                                ),
+                            )
+                        destination.unlink()
+
+                    destination.symlink_to(member.linkname)
+                    symlinks += 1
+                    continue
+
+                if member.islnk():
+                    link_target = _safe_archive_member_path(
+                        member.linkname
+                    )
+
+                    if link_target is None:
+                        raise AdapterOperationalError(
+                            "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+                            "candidate_execution",
+                            (
+                                "Hard-link target is empty: "
+                                f"{member.linkname!r}"
+                            ),
+                        )
+
+                    deferred_hardlinks.append(
+                        (destination, link_target)
+                    )
+                    continue
+
+                skipped_special += 1
+
+        for destination, link_target in deferred_hardlinks:
+            source = temporary_path.joinpath(
+                *link_target.parts
+            )
+
+            try:
+                resolved_source = source.resolve(
+                    strict=True
+                )
+            except FileNotFoundError as exc:
+                raise AdapterOperationalError(
+                    "FIRMAE_ROOTFS_EXPORT_FAILED",
+                    "candidate_execution",
+                    (
+                        "Hard-link target is unavailable: "
+                        f"{link_target}"
+                    ),
+                ) from exc
+
+            if (
+                not resolved_source.is_relative_to(
+                    temporary_path.resolve()
+                )
+                or source.is_symlink()
+                or not resolved_source.is_file()
+            ):
+                raise AdapterOperationalError(
+                    "FIRMAE_ROOTFS_EXPORT_FAILED",
+                    "candidate_execution",
+                    (
+                        "Hard-link target is outside the "
+                        f"export root or unsafe: {link_target}"
+                    ),
+                )
+
+            if (
+                destination.exists()
+                or destination.is_symlink()
+            ):
+                if destination.is_dir():
+                    raise AdapterOperationalError(
+                        "FIRMAE_ROOTFS_EXPORT_UNSAFE",
+                        "candidate_execution",
+                        (
+                            "Hard link collides with a "
+                            f"directory: {destination}"
+                        ),
+                    )
+                destination.unlink()
+
+            os.link(source, destination)
+            hardlinks += 1
+
+        if export_path.exists() or export_path.is_symlink():
+            if export_path.is_dir() and not export_path.is_symlink():
+                shutil.rmtree(export_path)
+            else:
+                export_path.unlink()
+
+        temporary_path.replace(export_path)
+
+        source_archive_sha256_after = sha256_file(
+            rootfs_archive
+        )
+
+        if (
+            source_archive_sha256_after
+            != source_archive_sha256_before
+        ):
+            raise AdapterOperationalError(
+                "FIRMAE_ROOTFS_ARCHIVE_CHANGED",
+                "candidate_execution",
+                (
+                    "The canonical rootfs archive changed while "
+                    "creating the validation export"
+                ),
+            )
+
+        report_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "adapter_id": ADAPTER_ID,
+                    "exported_at": utc_now(),
+                    "source_archive": str(
+                        rootfs_archive
+                    ),
+                    "export_path": str(export_path),
+                    "member_count": member_count,
+                    "total_regular_bytes": (
+                        total_regular_bytes
+                    ),
+                    "regular_files": regular_files,
+                    "directories": directories,
+                    "symlinks": symlinks,
+                    "hardlinks": hardlinks,
+                    "skipped_special_entries": (
+                        skipped_special
+                    ),
+                    "permission_policy": (
+                        "validation-copy-world-readable"
+                    ),
+                    "permission_normalised": bool(
+                        permission_normalised_directories
+                        or permission_normalised_files
+                    ),
+                    "permission_normalised_directories": (
+                        permission_normalised_directories
+                    ),
+                    "permission_normalised_files": (
+                        permission_normalised_files
+                    ),
+                    "source_archive_sha256_before": (
+                        source_archive_sha256_before
+                    ),
+                    "source_archive_sha256_after": (
+                        source_archive_sha256_after
+                    ),
+                    "source_archive_unchanged": True,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    except Exception:
+        if temporary_path.exists():
+            shutil.rmtree(
+                temporary_path,
+                ignore_errors=True,
+            )
+        raise
 
 
 def detect_firmae_architecture(
@@ -922,15 +1571,42 @@ def load_inferred_addresses(
     return addresses
 
 
-def wait_for_candidate_ping(
+def _scan_candidate_endpoints(
+    *,
+    address: str,
+    timeout_seconds: float,
+) -> list[dict[str, Any]]:
+    endpoints: list[dict[str, Any]] = []
+
+    for port, protocol in COMMON_ENDPOINTS:
+        try:
+            with socket.create_connection(
+                (address, port),
+                timeout=timeout_seconds,
+            ):
+                endpoints.append(
+                    {
+                        "host": address,
+                        "port": port,
+                        "protocol": protocol,
+                    }
+                )
+        except OSError:
+            continue
+
+    return endpoints
+
+
+def wait_for_candidate_readiness(
     *,
     runtime: RuntimeController,
     address: str,
     timeout_seconds: float,
     evidence_path: Path,
-) -> None:
+) -> list[dict[str, Any]]:
     deadline = time.monotonic() + timeout_seconds
-    latest_output = ""
+    latest_ping_output = ""
+    latest_endpoints: list[dict[str, Any]] = []
 
     while time.monotonic() < deadline:
         return_code = runtime.poll()
@@ -942,7 +1618,8 @@ def wait_for_candidate_ping(
                 "candidate_execution",
                 (
                     "FirmAE persistent runtime exited with "
-                    f"code {return_code} before boot was reported"
+                    f"code {return_code} before readiness "
+                    "was reported"
                 ),
             )
 
@@ -959,22 +1636,61 @@ def wait_for_candidate_ping(
             text=True,
             capture_output=True,
         )
-
-        latest_output = (
+        latest_ping_output = (
             completed.stdout + completed.stderr
         )
 
-        if completed.returncode == 0:
+        latest_endpoints = _scan_candidate_endpoints(
+            address=address,
+            timeout_seconds=0.5,
+        )
+
+        if (
+            completed.returncode == 0
+            or latest_endpoints
+        ):
             evidence_path.write_text(
-                latest_output,
+                json.dumps(
+                    {
+                        "schema_version": SCHEMA_VERSION,
+                        "adapter_id": ADAPTER_ID,
+                        "observed_at": utc_now(),
+                        "address": address,
+                        "ping_succeeded": (
+                            completed.returncode == 0
+                        ),
+                        "ping_output": latest_ping_output,
+                        "candidate_endpoint_claims": (
+                            latest_endpoints
+                        ),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
                 encoding="utf-8",
             )
-            return
+            return latest_endpoints
 
         time.sleep(5)
 
     evidence_path.write_text(
-        latest_output,
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "adapter_id": ADAPTER_ID,
+                "observed_at": utc_now(),
+                "address": address,
+                "ping_succeeded": False,
+                "ping_output": latest_ping_output,
+                "candidate_endpoint_claims": (
+                    latest_endpoints
+                ),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -982,11 +1698,13 @@ def wait_for_candidate_ping(
         "FIRMAE_BOOT_NOT_REPORTED",
         "candidate_execution",
         (
-            "FirmAE persistent runtime did not respond "
-            f"to ping at {address} within "
+            "FirmAE persistent runtime produced neither "
+            "ICMP reachability nor a supported TCP endpoint "
+            f"at {address} within "
             f"{timeout_seconds:.0f} seconds"
         ),
     )
+
 
 
 def discover_candidate_endpoints(
@@ -997,21 +1715,12 @@ def discover_candidate_endpoints(
     endpoints: list[dict[str, Any]] = []
 
     for address in addresses:
-        for port, protocol in COMMON_ENDPOINTS:
-            try:
-                with socket.create_connection(
-                    (address, port),
-                    timeout=2,
-                ):
-                    endpoints.append(
-                        {
-                            "host": address,
-                            "port": port,
-                            "protocol": protocol,
-                        }
-                    )
-            except OSError:
-                continue
+        endpoints.extend(
+            _scan_candidate_endpoints(
+                address=address,
+                timeout_seconds=1.0,
+            )
+        )
 
     (
         artifacts_path / "candidate-endpoint-claims.json"
@@ -1114,17 +1823,17 @@ def dispatch_candidate(
     )
 
     if completed.returncode != 0:
-        raise AdapterOperationalError(
-            "FIRMAE_EXTRACTION_FAILED",
-            "candidate_execution",
-            (
-                "FirmAE extraction failed with return "
-                f"code {completed.returncode}; inspect "
-                "/veritas/artifacts/rootfs-extractor.log, "
-                "/veritas/artifacts/kernel-extractor.log "
-                "and /veritas/artifacts/unpack-error.json"
+        event_writer.emit(
+            "stage_completed",
+            state="waiting_for_shutdown",
+            stage="unpack",
+            stage_outcome="failed",
+            message=unpack_failure_message(
+                artifacts_path,
+                completed.returncode,
             ),
         )
+        return None
 
     required_artifacts = [
         artifacts_path / "rootfs.tar.gz",
@@ -1150,6 +1859,13 @@ def dispatch_candidate(
             ),
         )
 
+    export_rootfs_tree(
+        rootfs_archive=(
+            artifacts_path / "rootfs.tar.gz"
+        ),
+        artifacts_path=artifacts_path,
+    )
+
     unpack_state = (
         "waiting_for_shutdown"
         if requested_stages == {"unpack"}
@@ -1159,6 +1875,16 @@ def dispatch_candidate(
     event_writer.emit(
         "extraction_complete",
         state=unpack_state,
+    )
+    event_writer.emit(
+        "stage_completed",
+        state=unpack_state,
+        stage="unpack",
+        stage_outcome="succeeded",
+        message=(
+            "FirmAE produced a root filesystem export for "
+            "independent VERITAS validation"
+        ),
     )
 
     if requested_stages == {"unpack"}:
@@ -1270,6 +1996,15 @@ def dispatch_candidate(
                 runtime_evidence_path
                 / "persistent-runtime-wrapper.log"
             ),
+            console_source_path=(
+                candidate_scratch
+                / "qemu.final.serial.log"
+            ),
+            console_export_path=(
+                artifacts_path
+                / "boot"
+                / "guest-console.log"
+            ),
         )
 
         (
@@ -1280,39 +2015,76 @@ def dispatch_candidate(
             encoding="utf-8",
         )
 
-        boot_timeout = min(
-            600.0,
-            max(
-                60.0,
-                float(
-                    request["lifecycle"][
-                        "timeout_seconds"
-                    ]
+        boot_timeout = float(
+            request["lifecycle"].get(
+                "boot_wait_timeout_seconds",
+                min(
+                    600.0,
+                    max(
+                        60.0,
+                        float(
+                            request["lifecycle"][
+                                "timeout_seconds"
+                            ]
+                        ),
+                    ),
                 ),
-            ),
+            )
         )
 
-        wait_for_candidate_ping(
-            runtime=runtime,
-            address=addresses[0],
-            timeout_seconds=boot_timeout,
-            evidence_path=(
-                runtime_evidence_path
-                / "persistent-ping.txt"
-            ),
+        readiness_endpoints = (
+            wait_for_candidate_readiness(
+                runtime=runtime,
+                address=addresses[0],
+                timeout_seconds=boot_timeout,
+                evidence_path=(
+                    runtime_evidence_path
+                    / "persistent-readiness.json"
+                ),
+            )
         )
 
         event_writer.emit(
             "candidate_boot_reported",
             state="running",
         )
+        event_writer.emit(
+            "stage_completed",
+            state="running",
+            stage="emulate",
+            stage_outcome="succeeded",
+            message=(
+                "FirmAE reported a persistent firmware runtime "
+                "ready for independent validation"
+            ),
+        )
 
         endpoint_claims = (
-            discover_candidate_endpoints(
+            readiness_endpoints
+            or discover_candidate_endpoints(
                 addresses=addresses,
                 artifacts_path=artifacts_path,
             )
         )
+
+        if readiness_endpoints:
+            (
+                artifacts_path
+                / "candidate-endpoint-claims.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "schema_version": SCHEMA_VERSION,
+                        "adapter_id": ADAPTER_ID,
+                        "recorded_at": utc_now(),
+                        "endpoints": endpoint_claims,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
         for endpoint in endpoint_claims:
             event_writer.emit(
@@ -1320,6 +2092,19 @@ def dispatch_candidate(
                 state="running",
                 endpoint=endpoint,
             )
+
+        endpoint_count = len(endpoint_claims)
+        event_writer.emit(
+            "stage_completed",
+            state="waiting_for_shutdown",
+            stage="endpoint-discovery",
+            stage_outcome="succeeded",
+            message=(
+                "FirmAE endpoint discovery completed with "
+                f"{endpoint_count} candidate endpoint claim"
+                + ("" if endpoint_count == 1 else "s")
+            ),
+        )
 
         return runtime
 
@@ -1428,6 +2213,12 @@ def main() -> int:
         heartbeat.start()
 
         try:
+            run_dependency_doctor(
+                artifacts_path=map_contract_path(
+                    request["paths"]["artifacts"]
+                ),
+            )
+
             run_database_command("initialize")
             database_started = True
 

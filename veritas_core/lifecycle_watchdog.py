@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from veritas_core.docker_supervisor import (
     DockerSupervisorError,
@@ -154,36 +154,49 @@ class LifecycleWatchdog:
         """
         self._shutdown_requested_by_core.set()
 
-    def wait_for_event(
+    def wait_for_matching_event(
         self,
-        event_name: str,
+        predicate: Callable[[dict[str, Any]], bool],
+        *,
+        description: str,
         timeout_seconds: float,
     ) -> dict[str, Any]:
+        """Wait until one validated event satisfies ``predicate``."""
         deadline = time.monotonic() + timeout_seconds
 
         with self._condition:
             while True:
                 for event in self._observed_events:
-                    if event.get("event") == event_name:
+                    if predicate(event):
                         return dict(event)
 
                 if self._finished.is_set():
                     raise LifecycleWatchdogError(
-                        f"Lifecycle ended before event "
-                        f"{event_name!r} was observed"
+                        "Lifecycle ended before "
+                        f"{description} was observed"
                     )
 
                 remaining = deadline - time.monotonic()
 
                 if remaining <= 0:
                     raise LifecycleWatchdogError(
-                        f"Timed out waiting for event "
-                        f"{event_name!r}"
+                        f"Timed out waiting for {description}"
                     )
 
                 self._condition.wait(
                     timeout=min(remaining, 0.25)
                 )
+
+    def wait_for_event(
+        self,
+        event_name: str,
+        timeout_seconds: float,
+    ) -> dict[str, Any]:
+        return self.wait_for_matching_event(
+            lambda event: event.get("event") == event_name,
+            description=f"event {event_name!r}",
+            timeout_seconds=timeout_seconds,
+        )
 
     def wait(
         self,

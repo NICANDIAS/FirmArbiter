@@ -28,6 +28,7 @@
         "extraction_complete",
         "candidate_boot_reported",
         "endpoint_reported",
+        "stage_completed",
         "heartbeat",
         "shutdown_started",
         "cleanup_complete",
@@ -137,6 +138,28 @@
         "failed",
         "terminated"
       ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "unpack",
+        "emulate",
+        "endpoint-discovery"
+      ]
+    },
+    "stage_outcome": {
+      "type": "string",
+      "enum": [
+        "succeeded",
+        "failed",
+        "inconclusive",
+        "not_applicable"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
     }
   },
   "allOf": [
@@ -165,6 +188,22 @@
       "then": {
         "required": [
           "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "stage_completed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "stage",
+          "stage_outcome",
+          "message"
         ]
       }
     },

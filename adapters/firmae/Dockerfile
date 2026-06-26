@@ -26,6 +26,17 @@ RUN chmod 0755 \
         "${UBUNTU_SNAPSHOT}" \
         /opt/veritas-adapter/dependencies/apt-direct.txt
 
+COPY dependencies/python-source-lock.tsv \
+    /opt/veritas-adapter/dependencies/python-source-lock.tsv
+
+COPY scripts/install_python_dependencies.sh \
+    /usr/local/bin/veritas-install-firmae-python-dependencies
+
+RUN chmod 0755 \
+        /usr/local/bin/veritas-install-firmae-python-dependencies \
+    && /usr/local/bin/veritas-install-firmae-python-dependencies \
+        /opt/veritas-adapter/dependencies/python-source-lock.tsv
+
 RUN git init "${FIRMAE_HOME}" \
     && git -C "${FIRMAE_HOME}" remote add origin \
         https://github.com/pr0v3rbs/FirmAE.git \
@@ -136,3 +147,12 @@ RUN chmod 0755 \
     && bash -n /usr/local/bin/veritas-firmae-prepare-image \
     && bash -n /usr/local/bin/veritas-firmae-infer-network \
     && bash -n /usr/local/bin/veritas-firmae-run-persistent
+
+# Fail image construction when a required FirmAE runtime dependency is absent.
+COPY scripts/verify_dependencies.py \
+    /usr/local/bin/veritas-firmae-dependency-doctor
+
+RUN chmod 0755 \
+        /usr/local/bin/veritas-firmae-dependency-doctor \
+    && /usr/local/bin/veritas-firmae-dependency-doctor \
+        --output /opt/veritas-adapter/provenance/dependency-check.json

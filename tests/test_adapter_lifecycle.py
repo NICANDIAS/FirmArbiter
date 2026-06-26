@@ -159,13 +159,31 @@ class AdapterLifecycleTests(unittest.TestCase):
                 ]
 
                 self.assertEqual(
-                    event_names[:4],
+                    event_names[:6],
                     [
                         "adapter_started",
                         "candidate_started",
                         "candidate_boot_reported",
+                        "stage_completed",
                         "endpoint_reported",
+                        "stage_completed",
                     ],
+                )
+
+                stage_events = [
+                    event
+                    for event in supervisor.events
+                    if event["event"] == "stage_completed"
+                ]
+                self.assertEqual(
+                    [event["stage"] for event in stage_events],
+                    ["emulate", "endpoint-discovery"],
+                )
+                self.assertTrue(
+                    all(
+                        event["stage_outcome"] == "succeeded"
+                        for event in stage_events
+                    )
                 )
 
                 heartbeat_events = [
@@ -194,7 +212,7 @@ class AdapterLifecycleTests(unittest.TestCase):
                 self.assertTrue(
                     all(
                         event_name == "heartbeat"
-                        for event_name in event_names[4:shutdown_index]
+                        for event_name in event_names[6:shutdown_index]
                     ),
                     "Only heartbeat events are permitted while awaiting shutdown",
                 )
@@ -226,6 +244,52 @@ class AdapterLifecycleTests(unittest.TestCase):
 
             finally:
                 supervisor.force_terminate()
+
+    def test_stage_completed_event_is_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            event_path = root / "events.jsonl"
+            events = [
+                {
+                    "schema_version": "1.0",
+                    "contract_version": "1.0",
+                    "event": "adapter_started",
+                    "sequence": 1,
+                    "timestamp": "2026-06-25T16:30:00Z",
+                    "run_id": "contract-test.run-1",
+                    "adapter_id": "mock-adapter",
+                    "state": "starting",
+                },
+                {
+                    "schema_version": "1.0",
+                    "contract_version": "1.0",
+                    "event": "stage_completed",
+                    "sequence": 2,
+                    "timestamp": "2026-06-25T16:30:01Z",
+                    "run_id": "contract-test.run-1",
+                    "adapter_id": "mock-adapter",
+                    "state": "waiting_for_shutdown",
+                    "stage": "unpack",
+                    "stage_outcome": "failed",
+                    "message": "Candidate produced no root filesystem",
+                },
+            ]
+            event_path.write_text(
+                "".join(json.dumps(item) + "\n" for item in events),
+                encoding="utf-8",
+            )
+            stream = AdapterEventStream(
+                event_path=event_path,
+                schema_path=EVENT_SCHEMA,
+                expected_run_id="contract-test.run-1",
+                expected_adapter_id="mock-adapter",
+            )
+            records = stream.read_new()
+            self.assertEqual(records[-1]["stage"], "unpack")
+            self.assertEqual(
+                records[-1]["stage_outcome"],
+                "failed",
+            )
 
     def test_success_field_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -366,6 +366,7 @@ def validate_boot_evidence(
     candidate_events: Iterable[dict[str, Any]],
     lifecycle: Any | None,
     authenticity_records: Iterable[Any],
+    not_attempted_reason: str | None = None,
 ) -> BootObservation:
     """
     Independently evaluate Linux boot/emulation success.
@@ -407,7 +408,8 @@ def validate_boot_evidence(
             lifecycle_outcome=lifecycle_outcome,
             console=console,
             reason=(
-                "The experiment did not request emulation"
+                not_attempted_reason
+                or "The experiment did not request emulation"
             ),
         )
 

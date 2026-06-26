@@ -88,7 +88,18 @@ class IndependentProbeOrchestrator:
     Candidate events trigger measurement but never determine their results.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        reachability_probe: Callable[..., Any] = (
+            probe_endpoint_event
+        ),
+        http_snapshot_probe: Callable[..., Any] = (
+            capture_http_snapshot
+        ),
+    ) -> None:
+        self._reachability_probe = reachability_probe
+        self._http_snapshot_probe = http_snapshot_probe
         self.endpoint_records: list[EndpointProbeRecord] = []
         self.stability_records: list[
             EndpointStabilityRecord
@@ -104,7 +115,7 @@ class IndependentProbeOrchestrator:
         if event.get("event") != "endpoint_reported":
             return []
 
-        reachability = probe_endpoint_event(
+        reachability = self._reachability_probe(
             event,
             timeout_seconds=2.0,
             attempts=2,
@@ -114,7 +125,7 @@ class IndependentProbeOrchestrator:
         active_snapshot: HttpServiceSnapshot | None = None
 
         if reachability.status == "true":
-            active_snapshot = capture_http_snapshot(
+            active_snapshot = self._http_snapshot_probe(
                 event,
                 timeout_seconds=3.0,
             )
@@ -156,6 +167,12 @@ class IndependentProbeOrchestrator:
                 interval_seconds=interval_seconds,
                 timeout_seconds=timeout_seconds,
                 should_continue=should_continue,
+                reachability_probe=(
+                    self._reachability_probe
+                ),
+                http_snapshot_probe=(
+                    self._http_snapshot_probe
+                ),
             )
 
             stability_record = EndpointStabilityRecord(
@@ -197,7 +214,7 @@ class IndependentProbeOrchestrator:
                 "endpoint": dict(record.candidate_claim),
             }
 
-            post_shutdown_snapshot = capture_http_snapshot(
+            post_shutdown_snapshot = self._http_snapshot_probe(
                 endpoint_event,
                 timeout_seconds=1.0,
             )

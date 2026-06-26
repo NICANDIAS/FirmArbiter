@@ -196,6 +196,13 @@ def main() -> int:
                 "extraction_complete",
                 state="running",
             )
+            emit(
+                "stage_completed",
+                state="running",
+                stage="unpack",
+                stage_outcome="succeeded",
+                message="Mock root filesystem export completed",
+            )
 
         server = ThreadingHTTPServer(
             ("127.0.0.1", 0),
@@ -214,15 +221,29 @@ def main() -> int:
             "candidate_boot_reported",
             state="running",
         )
+        emit(
+            "stage_completed",
+            state="running",
+            stage="emulate",
+            stage_outcome="succeeded",
+            message="Mock firmware runtime reported ready",
+        )
 
         emit(
             "endpoint_reported",
-            state="waiting_for_shutdown",
+            state="running",
             endpoint={
                 "host": "127.0.0.1",
                 "port": service_port,
                 "protocol": "http",
             },
+        )
+        emit(
+            "stage_completed",
+            state="waiting_for_shutdown",
+            stage="endpoint-discovery",
+            stage_outcome="succeeded",
+            message="Mock endpoint discovery completed with 1 claim",
         )
 
         heartbeat_interval = max(

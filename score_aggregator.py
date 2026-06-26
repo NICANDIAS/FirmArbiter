@@ -159,6 +159,25 @@ def candidate_claim_seen(
     )
 
 
+def candidate_stage_record(
+    result: dict[str, Any],
+    stage: str,
+) -> dict[str, Any]:
+    records = result.get("candidate_stage_results", [])
+
+    if not isinstance(records, list):
+        return {}
+
+    for record in records:
+        if (
+            isinstance(record, dict)
+            and record.get("stage") == stage
+        ):
+            return record
+
+    return {}
+
+
 def load_neutral_results(
     results_root: Path,
 ) -> list[dict[str, Any]]:
@@ -369,6 +388,12 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
     residue = measurements.get("environmental_residue", {})
     remediation = measurements.get("remediation", {})
     lifecycle = nested(result, "execution", "lifecycle") or {}
+    unpack_stage = candidate_stage_record(result, "unpack")
+    emulate_stage = candidate_stage_record(result, "emulate")
+    endpoint_stage = candidate_stage_record(
+        result,
+        "endpoint-discovery",
+    )
 
     compute_wall = first_numeric(
         compute,
@@ -489,6 +514,16 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
         ),
         "lifecycle_status": lifecycle.get("run_outcome"),
         "termination_mode": lifecycle.get("termination_mode"),
+        "unpack_stage_outcome": unpack_stage.get("outcome"),
+        "unpack_stage_seconds": unpack_stage.get("elapsed_seconds"),
+        "emulate_stage_outcome": emulate_stage.get("outcome"),
+        "emulate_stage_seconds": emulate_stage.get("elapsed_seconds"),
+        "endpoint_discovery_stage_outcome": (
+            endpoint_stage.get("outcome")
+        ),
+        "endpoint_discovery_stage_seconds": (
+            endpoint_stage.get("elapsed_seconds")
+        ),
         "unpack_status": unpack_status,
         "unpack_success": as_bool_status(unpack_status),
         "unpack_tree_sha256": unpack.get("tree_sha256"),

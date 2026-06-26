@@ -17,10 +17,14 @@ from veritas_core.compute_cost import (
 )
 from veritas_core.docker_backend import (
     BuiltAdapterImage,
+    BuiltProbeImage,
     DockerBackend,
 )
 from veritas_core.docker_supervisor import (
     DockerAdapterSupervisor,
+)
+from veritas_core.docker_namespace_probe import (
+    DockerNamespaceProbeSidecar,
 )
 from veritas_core.environment_janitor import (
     EnvironmentJanitor,
@@ -67,6 +71,7 @@ class RunPolicy:
     heartbeat_interval_seconds: int = 30
     heartbeat_timeout_seconds: int = 90
     shutdown_grace_seconds: int = 60
+    boot_wait_timeout_seconds: float = 900.0
 
     cpu_cores: float = 4.0
     memory_bytes: int = 8589934592
@@ -118,6 +123,11 @@ class RunPolicy:
         if self.shutdown_grace_seconds < 1:
             raise ValueError(
                 "shutdown_grace_seconds must be positive"
+            )
+
+        if self.boot_wait_timeout_seconds <= 0:
+            raise ValueError(
+                "boot_wait_timeout_seconds must be positive"
             )
 
         if self.cpu_cores <= 0:
@@ -248,6 +258,98 @@ def _observation_to_dict(
         return _not_attempted(missing_reason)
 
     return observation.to_dict()
+
+
+def _parse_event_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+
+    try:
+        return datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+
+
+def derive_candidate_stage_results(
+    events: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Derive candidate-reported stage outcomes and elapsed times."""
+    ordered = list(events)
+    starts: dict[str, str] = {}
+    results: list[dict[str, Any]] = []
+
+    for event in ordered:
+        event_name = event.get("event")
+        timestamp = event.get("timestamp")
+
+        if (
+            event_name == "candidate_started"
+            and isinstance(timestamp, str)
+        ):
+            starts.setdefault("unpack", timestamp)
+            continue
+
+        if event_name != "stage_completed":
+            continue
+
+        stage = event.get("stage")
+        outcome = event.get("stage_outcome")
+        message = event.get("message")
+
+        if not isinstance(stage, str):
+            continue
+
+        started_at = starts.get(stage)
+        completed_at = (
+            timestamp if isinstance(timestamp, str) else None
+        )
+        elapsed_seconds: float | None = None
+
+        started_dt = _parse_event_timestamp(started_at)
+        completed_dt = _parse_event_timestamp(completed_at)
+
+        if started_dt is not None and completed_dt is not None:
+            elapsed_seconds = round(
+                max(
+                    0.0,
+                    (completed_dt - started_dt).total_seconds(),
+                ),
+                6,
+            )
+
+        result = {
+            "stage": stage,
+            "outcome": outcome,
+            "message": message,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "elapsed_seconds": elapsed_seconds,
+            "event_sequence": event.get("sequence"),
+        }
+        results.append(result)
+
+        if outcome == "succeeded" and completed_at is not None:
+            if stage == "unpack":
+                starts.setdefault("emulate", completed_at)
+            elif stage == "emulate":
+                starts.setdefault(
+                    "endpoint-discovery",
+                    completed_at,
+                )
+
+    return results
+
+
+def _stage_result(
+    results: Iterable[dict[str, Any]],
+    stage: str,
+) -> dict[str, Any] | None:
+    for result in results:
+        if result.get("stage") == stage:
+            return result
+    return None
 
 
 class CandidateRunCoordinator:
@@ -417,6 +519,9 @@ class CandidateRunCoordinator:
                 "shutdown_grace_seconds": (
                     policy.shutdown_grace_seconds
                 ),
+                "boot_wait_timeout_seconds": (
+                    policy.boot_wait_timeout_seconds
+                ),
             },
             "resources": {
                 "cpu_cores": policy.cpu_cores,
@@ -482,7 +587,11 @@ class CandidateRunCoordinator:
         }
 
         image: BuiltAdapterImage | None = None
+        probe_image: BuiltProbeImage | None = None
         build_duration_seconds: float | None = None
+        probe_build_duration_seconds: (
+            float | None
+        ) = None
         setup_error: dict[str, Any] | None = None
 
         build_started = time.monotonic()
@@ -496,19 +605,50 @@ class CandidateRunCoordinator:
                 6,
             )
 
+            if runtime_manifest["network"] == "none":
+                probe_build_started = (
+                    time.monotonic()
+                )
+                probe_image = (
+                    self.backend
+                    .build_neutral_probe_image()
+                )
+                probe_build_duration_seconds = round(
+                    (
+                        time.monotonic()
+                        - probe_build_started
+                    ),
+                    6,
+                )
+
         except Exception as exc:
-            build_duration_seconds = round(
-                time.monotonic() - build_started,
-                6,
-            )
+            if build_duration_seconds is None:
+                build_duration_seconds = round(
+                    time.monotonic() - build_started,
+                    6,
+                )
 
             setup_error = {
-                "phase": "adapter_image_build",
+                "phase": (
+                    "neutral_probe_image_build"
+                    if image is not None
+                    and runtime_manifest[
+                        "network"
+                    ] == "none"
+                    and probe_image is None
+                    else "adapter_image_build"
+                ),
                 "error_type": type(exc).__name__,
                 "message": str(exc),
             }
 
-        if image is None:
+        if (
+            image is None
+            or (
+                runtime_manifest["network"] == "none"
+                and probe_image is None
+            )
+        ):
             result = {
                 **base_result,
                 "overall_status": "setup_failed",
@@ -516,6 +656,9 @@ class CandidateRunCoordinator:
                     "status": "failed",
                     "build_duration_seconds": (
                         build_duration_seconds
+                    ),
+                    "probe_build_duration_seconds": (
+                        probe_build_duration_seconds
                     ),
                     "error": setup_error,
                 },
@@ -576,6 +719,9 @@ class CandidateRunCoordinator:
         ) = None
         watchdog: LifecycleWatchdog | None = None
         sampler: DockerComputeCostSampler | None = None
+        probe_sidecar: (
+            DockerNamespaceProbeSidecar | None
+        ) = None
 
         lifecycle_observation: (
             LifecycleObservation | None
@@ -600,9 +746,19 @@ class CandidateRunCoordinator:
         ) = None
 
         runtime_error: dict[str, Any] | None = None
+        readiness_event: str | None = None
+        readiness_condition: str | None = None
+        readiness_observed_event: dict[str, Any] | None = None
+        blocking_stage_event: dict[str, Any] | None = None
+        readiness_wait_error: str | None = None
         endpoint_wait_error: str | None = None
 
         orchestrator = IndependentProbeOrchestrator()
+        network_probe_mode = (
+            "docker-shared-network-namespace"
+            if runtime_manifest["network"] == "none"
+            else "host-network"
+        )
 
         container_id: str | None = None
 
@@ -637,20 +793,152 @@ class CandidateRunCoordinator:
             )
             watchdog.start()
 
-            try:
-                watchdog.wait_for_event(
-                    "endpoint_reported",
-                    timeout_seconds=min(
-                        policy
-                        .endpoint_wait_timeout_seconds,
-                        float(
-                            policy.timeout_seconds
+            if runtime_manifest["network"] == "none":
+                if probe_image is None:
+                    raise RunCoordinatorError(
+                        "Neutral probe image was not built"
+                    )
+
+                probe_sidecar = (
+                    DockerNamespaceProbeSidecar(
+                        backend=self.backend,
+                        image=probe_image,
+                        candidate_container_id=container_id,
+                        run_id=run_id,
+                    )
+                )
+                probe_sidecar.start()
+                orchestrator = (
+                    IndependentProbeOrchestrator(
+                        reachability_probe=(
+                            probe_sidecar
+                            .probe_endpoint_event
                         ),
-                    ),
+                        http_snapshot_probe=(
+                            probe_sidecar
+                            .capture_http_snapshot
+                        ),
+                    )
                 )
 
+            requested_stages = set(
+                policy.requested_stages
+            )
+
+            def is_non_success_stage(
+                event: dict[str, Any],
+                stages: set[str],
+            ) -> bool:
+                return (
+                    event.get("event") == "stage_completed"
+                    and event.get("stage") in stages
+                    and event.get("stage_outcome")
+                    != "succeeded"
+                )
+
+            if "emulate" in requested_stages:
+                readiness_condition = (
+                    "emulation-stage completion or an earlier "
+                    "terminal candidate-stage outcome"
+                )
+
+                def readiness_predicate(
+                    event: dict[str, Any],
+                ) -> bool:
+                    return (
+                        event.get("event") == "stage_completed"
+                        and event.get("stage") == "emulate"
+                    ) or is_non_success_stage(
+                        event,
+                        {"unpack"},
+                    )
+
+            elif "unpack" in requested_stages:
+                readiness_condition = "unpack-stage completion"
+
+                def readiness_predicate(
+                    event: dict[str, Any],
+                ) -> bool:
+                    return (
+                        event.get("event") == "stage_completed"
+                        and event.get("stage") == "unpack"
+                    )
+
+            else:
+                readiness_condition = "candidate start"
+
+                def readiness_predicate(
+                    event: dict[str, Any],
+                ) -> bool:
+                    return event.get("event") == "candidate_started"
+
+            try:
+                readiness_observed_event = (
+                    watchdog.wait_for_matching_event(
+                        readiness_predicate,
+                        description=readiness_condition,
+                        timeout_seconds=float(
+                            policy.timeout_seconds
+                        ),
+                    )
+                )
+                readiness_event = str(
+                    readiness_observed_event.get("event")
+                )
+
+                if is_non_success_stage(
+                    readiness_observed_event,
+                    {"unpack", "emulate"},
+                ):
+                    blocking_stage_event = dict(
+                        readiness_observed_event
+                    )
+
             except LifecycleWatchdogError as exc:
-                endpoint_wait_error = str(exc)
+                readiness_wait_error = str(exc)
+
+            if (
+                readiness_wait_error is None
+                and blocking_stage_event is None
+                and "endpoint-discovery"
+                in requested_stages
+            ):
+                try:
+                    endpoint_stage_event = (
+                        watchdog.wait_for_matching_event(
+                            lambda event: (
+                                event.get("event")
+                                == "stage_completed"
+                                and event.get("stage")
+                                == "endpoint-discovery"
+                            ) or is_non_success_stage(
+                                event,
+                                {"unpack", "emulate"},
+                            ),
+                            description=(
+                                "endpoint-discovery completion"
+                            ),
+                            timeout_seconds=(
+                                policy
+                                .endpoint_wait_timeout_seconds
+                            ),
+                        )
+                    )
+
+                    if is_non_success_stage(
+                        endpoint_stage_event,
+                        {
+                            "unpack",
+                            "emulate",
+                            "endpoint-discovery",
+                        },
+                    ):
+                        blocking_stage_event = dict(
+                            endpoint_stage_event
+                        )
+
+                except LifecycleWatchdogError as exc:
+                    endpoint_wait_error = str(exc)
 
             handled_sequences: set[int] = set()
 
@@ -746,6 +1034,12 @@ class CandidateRunCoordinator:
                     except Exception:
                         pass
 
+            if probe_sidecar is not None:
+                try:
+                    probe_sidecar.close()
+                except Exception:
+                    pass
+
             if supervisor is not None:
                 try:
                     supervisor.force_terminate()
@@ -767,11 +1061,33 @@ class CandidateRunCoordinator:
             )
         )
 
+        candidate_stage_results = (
+            derive_candidate_stage_results(
+                observed_events
+            )
+        )
+        unpack_stage_result = _stage_result(
+            candidate_stage_results,
+            "unpack",
+        )
+        emulation_blocked_by_unpack = (
+            "emulate" in policy.requested_stages
+            and unpack_stage_result is not None
+            and unpack_stage_result.get("outcome")
+            != "succeeded"
+        )
+
         boot_observation = validate_boot_evidence(
             contract_root=contract_root,
             requested=(
-                "emulate"
-                in policy.requested_stages
+                "emulate" in policy.requested_stages
+                and not emulation_blocked_by_unpack
+            ),
+            not_attempted_reason=(
+                "Emulation was requested but not attempted because "
+                "the candidate unpack stage did not succeed"
+                if emulation_blocked_by_unpack
+                else None
             ),
             candidate_events=observed_events,
             lifecycle=lifecycle_observation,
@@ -874,11 +1190,28 @@ class CandidateRunCoordinator:
                 "build_duration_seconds": (
                     build_duration_seconds
                 ),
+                "probe_build_duration_seconds": (
+                    probe_build_duration_seconds
+                ),
                 "error": None,
             },
             "execution": {
                 "container_id": container_id,
+                "network_probe_mode": (
+                    network_probe_mode
+                ),
                 "runtime_error": runtime_error,
+                "readiness_condition": readiness_condition,
+                "readiness_event": readiness_event,
+                "readiness_observed_event": (
+                    readiness_observed_event
+                ),
+                "blocking_stage_event": (
+                    blocking_stage_event
+                ),
+                "readiness_wait_error": (
+                    readiness_wait_error
+                ),
                 "endpoint_wait_error": (
                     endpoint_wait_error
                 ),
@@ -893,6 +1226,9 @@ class CandidateRunCoordinator:
                 ),
             },
             "candidate_claims": candidate_claims,
+            "candidate_stage_results": (
+                candidate_stage_results
+            ),
             "independent_measurements": {
                 "unpack": (
                     _observation_to_dict(
@@ -995,6 +1331,37 @@ class CandidateRunCoordinator:
                 "candidate_image_repo_digests": (
                     list(image.repo_digests)
                 ),
+                "neutral_probe_runtime": {
+                    "mode": network_probe_mode,
+                    "image_reference": (
+                        probe_image.reference
+                        if probe_image is not None
+                        else None
+                    ),
+                    "image_id": (
+                        probe_image.image_id
+                        if probe_image is not None
+                        else None
+                    ),
+                    "image_repo_digests": (
+                        list(
+                            probe_image.repo_digests
+                        )
+                        if probe_image is not None
+                        else []
+                    ),
+                    "platform": (
+                        probe_image.platform
+                        if probe_image is not None
+                        else None
+                    ),
+                    "worker": (
+                        "/opt/veritas-probe/"
+                        "worker.py"
+                        if probe_image is not None
+                        else None
+                    ),
+                },
                 "request_sha256": request_sha256,
                 "experiment_manifest_sha256": (
                     experiment_manifest_sha256

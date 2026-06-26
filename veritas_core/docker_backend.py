@@ -31,6 +31,14 @@ class BuiltAdapterImage:
 
 
 @dataclass(frozen=True)
+class BuiltProbeImage:
+    reference: str
+    image_id: str
+    repo_digests: tuple[str, ...]
+    platform: str
+
+
+@dataclass(frozen=True)
 class CreatedContainer:
     container_id: str
     container_name: str
@@ -95,6 +103,13 @@ class DockerBackend:
             schema,
             format_checker=Draft202012Validator.FORMAT_CHECKER,
         )
+        self._built_image_cache: dict[
+            str,
+            BuiltAdapterImage,
+        ] = {}
+        self._neutral_probe_image: (
+            BuiltProbeImage | None
+        ) = None
 
     def _run(
         self,
@@ -145,6 +160,13 @@ class DockerBackend:
         self,
         adapter: AdapterRecord,
     ) -> BuiltAdapterImage:
+        cached = self._built_image_cache.get(
+            adapter.manifest_sha256
+        )
+
+        if cached is not None:
+            return cached
+
         build = adapter.manifest["build"]
 
         context_path = (
@@ -191,12 +213,88 @@ class DockerBackend:
             if isinstance(item, str)
         )
 
-        return BuiltAdapterImage(
+        built_image = BuiltAdapterImage(
             adapter_id=adapter.adapter_id,
             reference=image_reference,
             image_id=image_id,
             repo_digests=repo_digests,
         )
+        self._built_image_cache[
+            adapter.manifest_sha256
+        ] = built_image
+        return built_image
+
+    def build_neutral_probe_image(
+        self,
+    ) -> BuiltProbeImage:
+        if self._neutral_probe_image is not None:
+            return self._neutral_probe_image
+
+        context_path = Path(__file__).resolve().parent
+        dockerfile_path = (
+            context_path
+            / "probe_image"
+            / "Dockerfile"
+        )
+        image_reference = (
+            "veritas-neutral-network-probe:1.0.0"
+        )
+
+        self._run(
+            [
+                "build",
+                "--pull",
+                "--file",
+                str(dockerfile_path),
+                "--tag",
+                image_reference,
+                str(context_path),
+            ],
+            timeout=1200,
+        )
+
+        image_data = self.inspect_image(image_reference)
+        image_id = image_data.get("Id")
+
+        if not isinstance(image_id, str):
+            raise DockerBackendError(
+                "Docker did not return an image ID for "
+                f"{image_reference}"
+            )
+
+        architecture = image_data.get(
+            "Architecture"
+        )
+        operating_system = image_data.get("Os")
+
+        if (
+            not isinstance(architecture, str)
+            or not isinstance(operating_system, str)
+        ):
+            raise DockerBackendError(
+                "Docker did not return the neutral probe "
+                "image platform"
+            )
+
+        repo_digests = tuple(
+            item
+            for item in image_data.get(
+                "RepoDigests",
+                [],
+            )
+            if isinstance(item, str)
+        )
+
+        built = BuiltProbeImage(
+            reference=image_reference,
+            image_id=image_id,
+            repo_digests=repo_digests,
+            platform=(
+                f"{operating_system}/{architecture}"
+            ),
+        )
+        self._neutral_probe_image = built
+        return built
 
     def inspect_image(
         self,
@@ -583,6 +681,126 @@ class DockerBackend:
             image_id=image.image_id,
         )
 
+    def create_network_probe_sidecar(
+        self,
+        *,
+        candidate_container_id: str,
+        image: BuiltProbeImage,
+        run_id: str,
+    ) -> CreatedContainer:
+        run_hash = hashlib.sha256(
+            run_id.encode("utf-8")
+        ).hexdigest()[:12]
+        container_name = f"veritas-probe-{run_hash}"
+
+        arguments = [
+            "container",
+            "create",
+            "--name",
+            container_name,
+            "--init",
+            "--label",
+            "veritas.managed=true",
+            "--label",
+            "veritas.role=neutral-network-probe",
+            "--label",
+            f"veritas.run_id={run_id}",
+            "--network",
+            f"container:{candidate_container_id}",
+            "--read-only",
+            "--env",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=16m",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--cpus",
+            "0.25",
+            "--memory",
+            str(128 * 1024 * 1024),
+            "--memory-swap",
+            str(128 * 1024 * 1024),
+            "--pids-limit",
+            "64",
+            "--entrypoint",
+            "/usr/bin/python3",
+            image.image_id,
+            "-c",
+            (
+                "import signal,sys,time;"
+                "signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));"
+                "time.sleep(604800)"
+            ),
+        ]
+
+        completed = self._run(arguments)
+        container_id = completed.stdout.strip()
+
+        if not container_id:
+            raise DockerBackendError(
+                "Docker create returned no probe-sidecar ID"
+            )
+
+        return CreatedContainer(
+            container_id=container_id,
+            container_name=container_name,
+            image_id=image.image_id,
+        )
+
+    def exec_container_json(
+        self,
+        *,
+        container_id: str,
+        arguments: Sequence[str],
+        timeout: float,
+    ) -> dict[str, Any]:
+        completed = self._run(
+            [
+                "container",
+                "exec",
+                container_id,
+                *arguments,
+            ],
+            check=False,
+            timeout=timeout,
+        )
+
+        if completed.returncode != 0:
+            raise DockerBackendError(
+                "Neutral namespace probe failed with code "
+                f"{completed.returncode}:\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
+
+        lines = [
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        ]
+
+        if not lines:
+            raise DockerBackendError(
+                "Neutral namespace probe returned no JSON"
+            )
+
+        try:
+            document = json.loads(lines[-1])
+        except json.JSONDecodeError as exc:
+            raise DockerBackendError(
+                f"Neutral namespace probe returned invalid JSON: "
+                f"{exc}"
+            ) from exc
+
+        if not isinstance(document, dict):
+            raise DockerBackendError(
+                "Neutral namespace probe result was not an object"
+            )
+
+        return document
+
     def start_container(self, container_id: str) -> None:
         self._run(
             ["container", "start", container_id]
@@ -638,6 +856,61 @@ class DockerBackend:
             check=False,
             timeout=timeout_seconds + 10,
         )
+
+    def container_stats_snapshot(
+        self,
+        container_id: str,
+    ) -> dict[str, Any]:
+        """
+        Return one Docker-generated resource snapshot.
+
+        The backend returns raw Docker fields. Candidate-neutral parsing and
+        aggregation are performed by the compute-cost sampler.
+        """
+        completed = self._run(
+            [
+                "container",
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{json .}}",
+                container_id,
+            ],
+            check=False,
+            timeout=30,
+        )
+
+        if completed.returncode != 0:
+            raise DockerBackendError(
+                f"Could not collect container statistics for "
+                f"{container_id}:\n{completed.stderr}"
+            )
+
+        lines = [
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        ]
+
+        if not lines:
+            raise DockerBackendError(
+                f"Docker returned no statistics for container "
+                f"{container_id}"
+            )
+
+        try:
+            document = json.loads(lines[-1])
+        except json.JSONDecodeError as exc:
+            raise DockerBackendError(
+                f"Invalid Docker statistics response: {exc}"
+            ) from exc
+
+        if not isinstance(document, dict):
+            raise DockerBackendError(
+                "Docker statistics response was not a JSON object"
+            )
+
+        return document
 
     def kill_container(self, container_id: str) -> None:
         self._run(
