@@ -1,0 +1,9 @@
+===== NETWORK INFERENCE =====
+IID:          1
+Architecture: armel
+Init candidates:
+/etc/init0.d/rcS
+/etc/init.d/rcS
+/firmadyne/preInit.sh
+
+Network inference command completed

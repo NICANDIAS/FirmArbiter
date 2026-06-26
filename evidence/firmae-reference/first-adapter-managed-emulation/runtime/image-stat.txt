@@ -1,0 +1,3 @@
+size_bytes=1073741824
+blocks=204096
+block_size=512

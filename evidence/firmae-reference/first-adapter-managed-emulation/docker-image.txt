@@ -1,0 +1,7 @@
+
+ImageID=sha256:24472f6366ea1f34449ccd0b6a153c4da3eb4d4024679badb7c1329fbbc05850
+Created=2026-06-26T04:50:57.864529726+01:00
+Architecture=amd64
+OS=linux
+Entrypoint=["python3","/opt/veritas-adapter/entrypoint.py"]
+

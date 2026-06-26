@@ -1,0 +1,7 @@
+  1 2026-06-26T03:59:53.745824Z adapter_started
+  6 2026-06-26T04:00:09.563200Z candidate_started
+ 15 2026-06-26T04:00:50.233152Z extraction_complete
+517 2026-06-26T04:42:53.730491Z candidate_boot_reported
+550 2026-06-26T04:45:36.141186Z shutdown_started
+551 2026-06-26T04:45:38.027958Z cleanup_complete
+552 2026-06-26T04:45:38.037297Z adapter_stopped outcome=completed

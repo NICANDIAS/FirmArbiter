@@ -1,0 +1,260 @@
+[
+    {
+        "Id": "cd41e2c412e8c510ce4d6c1db9257bd008f57adbc43116f1fa7f976873c1f5ec",
+        "Created": "2026-06-26T03:59:52.967493142Z",
+        "Path": "python3",
+        "Args": [
+            "/opt/veritas-adapter/entrypoint.py",
+            "/veritas/input/request.json"
+        ],
+        "State": {
+            "Status": "exited",
+            "Running": false,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 0,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-06-26T03:59:53.191696762Z",
+            "FinishedAt": "2026-06-26T04:45:38.186741534Z"
+        },
+        "Image": "sha256:24472f6366ea1f34449ccd0b6a153c4da3eb4d4024679badb7c1329fbbc05850",
+        "ResolvConfPath": "/var/lib/docker/containers/cd41e2c412e8c510ce4d6c1db9257bd008f57adbc43116f1fa7f976873c1f5ec/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/cd41e2c412e8c510ce4d6c1db9257bd008f57adbc43116f1fa7f976873c1f5ec/hostname",
+        "HostsPath": "/var/lib/docker/containers/cd41e2c412e8c510ce4d6c1db9257bd008f57adbc43116f1fa7f976873c1f5ec/hosts",
+        "LogPath": "/var/lib/docker/containers/cd41e2c412e8c510ce4d6c1db9257bd008f57adbc43116f1fa7f976873c1f5ec/cd41e2c412e8c510ce4d6c1db9257bd008f57adbc43116f1fa7f976873c1f5ec-json.log",
+        "Name": "/veritas-firmae-full-20260626t035952z",
+        "RestartCount": 0,
+        "Driver": "overlayfs",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "unconfined",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "none",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": [
+                "firmae-full:127.0.1.1"
+            ],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": true,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": [
+                "label=disable"
+            ],
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": [],
+            "BlkioDeviceReadBps": [],
+            "BlkioDeviceWriteBps": [],
+            "BlkioDeviceReadIOps": [],
+            "BlkioDeviceWriteIOps": [],
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": [],
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/input",
+                    "Target": "/veritas/input",
+                    "ReadOnly": true
+                },
+                {
+                    "Type": "bind",
+                    "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/work",
+                    "Target": "/veritas/work"
+                },
+                {
+                    "Type": "bind",
+                    "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/artifacts",
+                    "Target": "/veritas/artifacts"
+                },
+                {
+                    "Type": "bind",
+                    "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/events",
+                    "Target": "/veritas/events"
+                },
+                {
+                    "Type": "bind",
+                    "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/control",
+                    "Target": "/veritas/control"
+                }
+            ],
+            "MaskedPaths": null,
+            "ReadonlyPaths": null
+        },
+        "Storage": {
+            "RootFS": {
+                "Snapshot": {
+                    "Name": "overlayfs"
+                }
+            }
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/input",
+                "Destination": "/veritas/input",
+                "Mode": "",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/work",
+                "Destination": "/veritas/work",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/artifacts",
+                "Destination": "/veritas/artifacts",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/events",
+                "Destination": "/veritas/events",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/control",
+                "Destination": "/veritas/control",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "firmae-full",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "DEBIAN_FRONTEND=noninteractive",
+                "FIRMAE_HOME=/opt/firmae"
+            ],
+            "Cmd": [
+                "/veritas/input/request.json"
+            ],
+            "Image": "veritas-adapter-firmae:emulation-entrypoint-v1",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": [
+                "python3",
+                "/opt/veritas-adapter/entrypoint.py"
+            ],
+            "Labels": {
+                "org.opencontainers.image.revision": "dd98505984feac91cf113e13d5de01a4fc1574f2",
+                "org.opencontainers.image.source": "https://github.com/pr0v3rbs/FirmAE",
+                "org.opencontainers.image.title": "VERITAS FirmAE Adapter",
+                "org.opencontainers.image.version": "22.04",
+                "veritas.adapter.contract-version": "1.0",
+                "veritas.adapter.id": "firmae",
+                "veritas.dependencies.ubuntu-snapshot": "20260615T120000Z"
+            }
+        },
+        "NetworkSettings": {
+            "SandboxID": "",
+            "SandboxKey": "",
+            "Ports": {},
+            "Networks": {
+                "none": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "208298dd2de0fa24b9b142b002cab3b15189c45af0249a3b9be1ede1685b666c",
+                    "EndpointID": "",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "MacAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        },
+        "ImageManifestDescriptor": {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:24472f6366ea1f34449ccd0b6a153c4da3eb4d4024679badb7c1329fbbc05850",
+            "size": 4696,
+            "platform": {
+                "architecture": "amd64",
+                "os": "linux"
+            }
+        }
+    }
+]
