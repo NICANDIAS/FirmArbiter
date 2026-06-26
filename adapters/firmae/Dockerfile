@@ -123,3 +123,16 @@ RUN mkdir -p /opt/veritas-adapter/locks \
         /opt/veritas-adapter/locks/firmae-release-assets.sha256 \
         /opt/veritas-adapter/provenance/firmae-release-assets.locked.sha256 \
     && rm -f /tmp/firmae-release-assets.sha256
+
+# Candidate execution helpers proven during the first real firmware run.
+COPY scripts/prepare_image.sh /usr/local/bin/veritas-firmae-prepare-image
+COPY scripts/infer_network.sh /usr/local/bin/veritas-firmae-infer-network
+COPY scripts/run_persistent.sh /usr/local/bin/veritas-firmae-run-persistent
+
+RUN chmod 0755 \
+    /usr/local/bin/veritas-firmae-prepare-image \
+    /usr/local/bin/veritas-firmae-infer-network \
+    /usr/local/bin/veritas-firmae-run-persistent \
+    && bash -n /usr/local/bin/veritas-firmae-prepare-image \
+    && bash -n /usr/local/bin/veritas-firmae-infer-network \
+    && bash -n /usr/local/bin/veritas-firmae-run-persistent
