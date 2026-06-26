@@ -97,3 +97,29 @@ COPY entrypoint.py     /opt/veritas-adapter/entrypoint.py
 RUN chmod 0755     /opt/veritas-adapter/entrypoint.py
 
 ENTRYPOINT ["python3", "/opt/veritas-adapter/entrypoint.py"]
+
+# Install FirmAE release assets required for image creation and emulation.
+COPY scripts/install_firmae_release_assets.sh /usr/local/bin/install_firmae_release_assets
+RUN chmod 0755 /usr/local/bin/install_firmae_release_assets \
+    && /usr/local/bin/install_firmae_release_assets
+
+# Verify the separately distributed FirmAE runtime assets against
+# the immutable checksum lock captured during clean-room discovery.
+COPY dependencies/firmae-release-assets.sha256 /tmp/firmae-release-assets.sha256
+RUN mkdir -p /opt/veritas-adapter/locks \
+    && install \
+        -o root \
+        -g root \
+        -m 0644 \
+        /tmp/firmae-release-assets.sha256 \
+        /opt/veritas-adapter/locks/firmae-release-assets.sha256 \
+    && cd /opt/firmae \
+    && sha256sum -c \
+        /opt/veritas-adapter/locks/firmae-release-assets.sha256 \
+    && install \
+        -o root \
+        -g root \
+        -m 0644 \
+        /opt/veritas-adapter/locks/firmae-release-assets.sha256 \
+        /opt/veritas-adapter/provenance/firmae-release-assets.locked.sha256 \
+    && rm -f /tmp/firmae-release-assets.sha256

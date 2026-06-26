@@ -38,3 +38,4 @@ wget
 zlib1g-dev
 python3-magic
 squashfs-tools
+file
