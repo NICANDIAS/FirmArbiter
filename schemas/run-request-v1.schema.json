@@ -142,6 +142,11 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 86400
+        },
+        "endpoint_wait_timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400
         }
       }
     },

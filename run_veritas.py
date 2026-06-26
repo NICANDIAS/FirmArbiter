@@ -691,16 +691,26 @@ def summarise_result(result: dict[str, Any]) -> str:
     )
 
     reachability = measurements.get("reachability", [])
-    reachable = any(
+    reachability_statuses = [
         status_value(
             record,
             "independent_measurement",
             "status",
         )
-        == "true"
         for record in reachability
         if isinstance(record, dict)
-    )
+    ]
+
+    if not reachability_statuses:
+        reachable = "not_attempted"
+    elif "true" in reachability_statuses:
+        reachable = "true"
+    elif "false" in reachability_statuses:
+        reachable = "false"
+    elif "inconclusive" in reachability_statuses:
+        reachable = "inconclusive"
+    else:
+        reachable = reachability_statuses[0]
 
     return (
         f"status={result.get('overall_status')} "
@@ -798,8 +808,8 @@ Examples:
         type=float,
         default=300.0,
         help=(
-            "Additional endpoint-discovery grace after the requested "
-            "readiness event (default: 300 seconds)"
+            "Bounded candidate endpoint-discovery window after boot "
+            "readiness (default: 300 seconds)"
         ),
     )
     parser.add_argument(

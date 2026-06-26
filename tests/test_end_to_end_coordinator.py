@@ -138,6 +138,21 @@ class EndToEndCoordinatorTests(unittest.TestCase):
                 "completed",
             )
 
+            request_document = json.loads(
+                (
+                    Path(result["run"]["result_directory"])
+                    / "contract"
+                    / "input"
+                    / "request.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                request_document["lifecycle"][
+                    "endpoint_wait_timeout_seconds"
+                ],
+                10,
+            )
+
             self.assertEqual(
                 result["setup"]["status"],
                 "ready",

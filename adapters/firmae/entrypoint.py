@@ -361,6 +361,26 @@ def load_and_validate_request(
             "must be a positive number"
         )
 
+    endpoint_wait_timeout = lifecycle.get(
+        "endpoint_wait_timeout_seconds"
+    )
+
+    if (
+        endpoint_wait_timeout is not None
+        and (
+            not isinstance(
+                endpoint_wait_timeout,
+                (int, float),
+            )
+            or isinstance(endpoint_wait_timeout, bool)
+            or endpoint_wait_timeout <= 0
+        )
+    ):
+        raise ContractError(
+            "lifecycle.endpoint_wait_timeout_seconds "
+            "must be a positive number"
+        )
+
     return request
 
 
@@ -1707,20 +1727,62 @@ def wait_for_candidate_readiness(
 
 
 
-def discover_candidate_endpoints(
+def _write_endpoint_discovery_evidence(
     *,
-    addresses: list[str],
     artifacts_path: Path,
-) -> list[dict[str, Any]]:
-    endpoints: list[dict[str, Any]] = []
+    addresses: list[str],
+    timeout_seconds: float,
+    scan_interval_seconds: float,
+    scan_timeout_seconds: float,
+    attempts: list[dict[str, Any]],
+    endpoints: list[dict[str, Any]],
+    started_at: str,
+    elapsed_seconds: float,
+    outcome: str,
+    runtime_exit_code: int | None = None,
+) -> None:
+    completed_at = utc_now()
 
-    for address in addresses:
-        endpoints.extend(
-            _scan_candidate_endpoints(
-                address=address,
-                timeout_seconds=1.0,
-            )
+    discovery_record: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "adapter_id": ADAPTER_ID,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "addresses": addresses,
+        "ports_tested": [
+            {
+                "port": port,
+                "protocol": protocol,
+            }
+            for port, protocol in COMMON_ENDPOINTS
+        ],
+        "timeout_seconds": timeout_seconds,
+        "scan_interval_seconds": scan_interval_seconds,
+        "scan_timeout_seconds": scan_timeout_seconds,
+        "attempt_count": len(attempts),
+        "elapsed_seconds": elapsed_seconds,
+        "outcome": outcome,
+        "attempts": attempts,
+        "endpoints": endpoints,
+    }
+
+    if runtime_exit_code is not None:
+        discovery_record["runtime_exit_code"] = (
+            runtime_exit_code
         )
+
+    (
+        artifacts_path
+        / "candidate-endpoint-discovery.json"
+    ).write_text(
+        json.dumps(
+            discovery_record,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     (
         artifacts_path / "candidate-endpoint-claims.json"
@@ -1729,7 +1791,7 @@ def discover_candidate_endpoints(
             {
                 "schema_version": SCHEMA_VERSION,
                 "adapter_id": ADAPTER_ID,
-                "recorded_at": utc_now(),
+                "recorded_at": completed_at,
                 "endpoints": endpoints,
             },
             indent=2,
@@ -1739,7 +1801,170 @@ def discover_candidate_endpoints(
         encoding="utf-8",
     )
 
-    return endpoints
+
+def discover_candidate_endpoints(
+    *,
+    runtime: RuntimeController,
+    addresses: list[str],
+    artifacts_path: Path,
+    timeout_seconds: float,
+    initial_endpoints: list[dict[str, Any]] | None = None,
+    scan_interval_seconds: float = 5.0,
+    scan_timeout_seconds: float = 1.0,
+) -> tuple[list[dict[str, Any]], int | None]:
+    if timeout_seconds <= 0:
+        raise ValueError(
+            "timeout_seconds must be positive"
+        )
+
+    if scan_interval_seconds <= 0:
+        raise ValueError(
+            "scan_interval_seconds must be positive"
+        )
+
+    if scan_timeout_seconds <= 0:
+        raise ValueError(
+            "scan_timeout_seconds must be positive"
+        )
+
+    started_at = utc_now()
+    started_monotonic = time.monotonic()
+    deadline = started_monotonic + timeout_seconds
+    attempts: list[dict[str, Any]] = []
+    endpoints = list(initial_endpoints or [])
+
+    if endpoints:
+        attempts.append(
+            {
+                "attempt": 1,
+                "observed_at": utc_now(),
+                "elapsed_seconds": 0.0,
+                "source": "boot-readiness",
+                "endpoint_count": len(endpoints),
+                "endpoints": endpoints,
+            }
+        )
+    else:
+        while True:
+            return_code = runtime.poll()
+
+            if return_code is not None:
+                recorded_return_code = (
+                    runtime.record_unexpected_exit()
+                )
+                elapsed_seconds = max(
+                    0.0,
+                    time.monotonic() - started_monotonic,
+                )
+                _write_endpoint_discovery_evidence(
+                    artifacts_path=artifacts_path,
+                    addresses=addresses,
+                    timeout_seconds=timeout_seconds,
+                    scan_interval_seconds=(
+                        scan_interval_seconds
+                    ),
+                    scan_timeout_seconds=(
+                        scan_timeout_seconds
+                    ),
+                    attempts=attempts,
+                    endpoints=[],
+                    started_at=started_at,
+                    elapsed_seconds=elapsed_seconds,
+                    outcome="runtime_exited",
+                    runtime_exit_code=(
+                        recorded_return_code
+                    ),
+                )
+                return [], recorded_return_code
+
+            now = time.monotonic()
+            remaining_seconds = deadline - now
+
+            if attempts and remaining_seconds <= 0:
+                break
+
+            per_connection_timeout = min(
+                scan_timeout_seconds,
+                max(
+                    0.05,
+                    max(remaining_seconds, 0.05)
+                    / max(1, len(COMMON_ENDPOINTS)),
+                ),
+            )
+
+            discovered: list[dict[str, Any]] = []
+
+            for address in addresses:
+                discovered.extend(
+                    _scan_candidate_endpoints(
+                        address=address,
+                        timeout_seconds=(
+                            per_connection_timeout
+                        ),
+                    )
+                )
+
+            observed_monotonic = time.monotonic()
+            attempts.append(
+                {
+                    "attempt": len(attempts) + 1,
+                    "observed_at": utc_now(),
+                    "elapsed_seconds": max(
+                        0.0,
+                        observed_monotonic
+                        - started_monotonic,
+                    ),
+                    "source": "active-port-scan",
+                    "connection_timeout_seconds": (
+                        per_connection_timeout
+                    ),
+                    "endpoint_count": len(discovered),
+                    "endpoints": discovered,
+                }
+            )
+
+            if discovered:
+                endpoints = discovered
+                break
+
+            remaining_seconds = (
+                deadline - observed_monotonic
+            )
+
+            if remaining_seconds <= 0:
+                break
+
+            time.sleep(
+                min(
+                    scan_interval_seconds,
+                    remaining_seconds,
+                )
+            )
+
+    elapsed_seconds = max(
+        0.0,
+        time.monotonic() - started_monotonic,
+    )
+    outcome = (
+        "endpoint_found"
+        if endpoints
+        else "timeout"
+    )
+
+    _write_endpoint_discovery_evidence(
+        artifacts_path=artifacts_path,
+        addresses=addresses,
+        timeout_seconds=timeout_seconds,
+        scan_interval_seconds=scan_interval_seconds,
+        scan_timeout_seconds=scan_timeout_seconds,
+        attempts=attempts,
+        endpoints=endpoints,
+        started_at=started_at,
+        elapsed_seconds=elapsed_seconds,
+        outcome=outcome,
+    )
+
+    return endpoints, None
 
 
 def dispatch_candidate(
@@ -2059,32 +2284,37 @@ def dispatch_candidate(
             ),
         )
 
-        endpoint_claims = (
-            readiness_endpoints
-            or discover_candidate_endpoints(
-                addresses=addresses,
-                artifacts_path=artifacts_path,
+        endpoint_timeout = float(
+            request["lifecycle"].get(
+                "endpoint_wait_timeout_seconds",
+                300.0,
             )
         )
 
-        if readiness_endpoints:
-            (
-                artifacts_path
-                / "candidate-endpoint-claims.json"
-            ).write_text(
-                json.dumps(
-                    {
-                        "schema_version": SCHEMA_VERSION,
-                        "adapter_id": ADAPTER_ID,
-                        "recorded_at": utc_now(),
-                        "endpoints": endpoint_claims,
-                    },
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
+        (
+            endpoint_claims,
+            endpoint_runtime_exit_code,
+        ) = discover_candidate_endpoints(
+            runtime=runtime,
+            addresses=addresses,
+            artifacts_path=artifacts_path,
+            timeout_seconds=endpoint_timeout,
+            initial_endpoints=readiness_endpoints,
+        )
+
+        if endpoint_runtime_exit_code is not None:
+            event_writer.emit(
+                "stage_completed",
+                state="waiting_for_shutdown",
+                stage="endpoint-discovery",
+                stage_outcome="failed",
+                message=(
+                    "FirmAE persistent runtime exited during "
+                    "endpoint discovery with return code "
+                    f"{endpoint_runtime_exit_code}"
+                ),
             )
+            return None
 
         for endpoint in endpoint_claims:
             event_writer.emit(
@@ -2100,8 +2330,9 @@ def dispatch_candidate(
             stage="endpoint-discovery",
             stage_outcome="succeeded",
             message=(
-                "FirmAE endpoint discovery completed with "
-                f"{endpoint_count} candidate endpoint claim"
+                "FirmAE endpoint discovery completed after a "
+                f"bounded {endpoint_timeout:.0f}-second window "
+                f"with {endpoint_count} candidate endpoint claim"
                 + ("" if endpoint_count == 1 else "s")
             ),
         )

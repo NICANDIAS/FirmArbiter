@@ -522,6 +522,9 @@ class CandidateRunCoordinator:
                 "boot_wait_timeout_seconds": (
                     policy.boot_wait_timeout_seconds
                 ),
+                "endpoint_wait_timeout_seconds": (
+                    policy.endpoint_wait_timeout_seconds
+                ),
             },
             "resources": {
                 "cpu_cores": policy.cpu_cores,
@@ -919,8 +922,14 @@ class CandidateRunCoordinator:
                                 "endpoint-discovery completion"
                             ),
                             timeout_seconds=(
-                                policy
-                                .endpoint_wait_timeout_seconds
+                                policy.endpoint_wait_timeout_seconds
+                                + max(
+                                    5.0,
+                                    float(
+                                        policy
+                                        .heartbeat_interval_seconds
+                                    ),
+                                )
                             ),
                         )
                     )
