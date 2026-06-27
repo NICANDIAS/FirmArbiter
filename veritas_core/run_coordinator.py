@@ -272,6 +272,35 @@ def _parse_event_timestamp(value: Any) -> datetime | None:
         return None
 
 
+
+
+def candidate_stage_blocks_following_work(
+    event: dict[str, Any],
+    stages: set[str],
+) -> bool:
+    """Return whether a stage outcome prevents later candidate work.
+
+    An inconclusive emulation outcome does not block endpoint discovery
+    when the candidate runtime is still alive. It means the adapter did
+    not obtain its own network-readiness signal; independent boot
+    validation and bounded endpoint discovery may still produce useful
+    evidence.
+    """
+    if (
+        event.get("event") != "stage_completed"
+        or event.get("stage") not in stages
+    ):
+        return False
+
+    outcome = event.get("stage_outcome")
+    stage = event.get("stage")
+
+    if stage == "emulate" and outcome == "inconclusive":
+        return False
+
+    return outcome != "succeeded"
+
+
 def derive_candidate_stage_results(
     events: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -330,10 +359,13 @@ def derive_candidate_stage_results(
         }
         results.append(result)
 
-        if outcome == "succeeded" and completed_at is not None:
-            if stage == "unpack":
+        if completed_at is not None:
+            if stage == "unpack" and outcome == "succeeded":
                 starts.setdefault("emulate", completed_at)
-            elif stage == "emulate":
+            elif (
+                stage == "emulate"
+                and outcome in {"succeeded", "inconclusive"}
+            ):
                 starts.setdefault(
                     "endpoint-discovery",
                     completed_at,
@@ -828,17 +860,6 @@ class CandidateRunCoordinator:
                 policy.requested_stages
             )
 
-            def is_non_success_stage(
-                event: dict[str, Any],
-                stages: set[str],
-            ) -> bool:
-                return (
-                    event.get("event") == "stage_completed"
-                    and event.get("stage") in stages
-                    and event.get("stage_outcome")
-                    != "succeeded"
-                )
-
             if "emulate" in requested_stages:
                 readiness_condition = (
                     "emulation-stage completion or an earlier "
@@ -851,7 +872,7 @@ class CandidateRunCoordinator:
                     return (
                         event.get("event") == "stage_completed"
                         and event.get("stage") == "emulate"
-                    ) or is_non_success_stage(
+                    ) or candidate_stage_blocks_following_work(
                         event,
                         {"unpack"},
                     )
@@ -889,7 +910,7 @@ class CandidateRunCoordinator:
                     readiness_observed_event.get("event")
                 )
 
-                if is_non_success_stage(
+                if candidate_stage_blocks_following_work(
                     readiness_observed_event,
                     {"unpack", "emulate"},
                 ):
@@ -914,7 +935,7 @@ class CandidateRunCoordinator:
                                 == "stage_completed"
                                 and event.get("stage")
                                 == "endpoint-discovery"
-                            ) or is_non_success_stage(
+                            ) or candidate_stage_blocks_following_work(
                                 event,
                                 {"unpack", "emulate"},
                             ),
@@ -934,7 +955,7 @@ class CandidateRunCoordinator:
                         )
                     )
 
-                    if is_non_success_stage(
+                    if candidate_stage_blocks_following_work(
                         endpoint_stage_event,
                         {
                             "unpack",

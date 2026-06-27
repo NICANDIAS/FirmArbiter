@@ -4,12 +4,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from jsonschema import Draft202012Validator
 
 from adapters.firmae.entrypoint import (
     discover_candidate_endpoints,
+    wait_for_candidate_network_readiness,
 )
 from run_veritas import summarise_result
 
@@ -62,6 +64,109 @@ class RuntimeStub:
 
 
 class EndpointDiscoveryWindowTests(unittest.TestCase):
+    def test_network_readiness_timeout_is_candidate_observation(self) -> None:
+        clock = FakeClock()
+        runtime = RuntimeStub()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence_path = (
+                Path(temporary)
+                / "persistent-readiness.json"
+            )
+
+            with mock.patch(
+                "adapters.firmae.entrypoint.time.monotonic",
+                side_effect=clock.monotonic,
+            ), mock.patch(
+                "adapters.firmae.entrypoint.time.sleep",
+                side_effect=clock.sleep,
+            ), mock.patch(
+                "adapters.firmae.entrypoint.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="no reply",
+                ),
+            ), mock.patch(
+                "adapters.firmae.entrypoint._scan_candidate_endpoints",
+                return_value=[],
+            ) as scan:
+                endpoints, network_ready = (
+                    wait_for_candidate_network_readiness(
+                        runtime=runtime,
+                        address="192.168.0.1",
+                        timeout_seconds=12.0,
+                        evidence_path=evidence_path,
+                        poll_interval_seconds=5.0,
+                    )
+                )
+
+            self.assertFalse(network_ready)
+            self.assertEqual(endpoints, [])
+            self.assertFalse(runtime.unexpected_exit_recorded)
+            self.assertEqual(scan.call_count, 3)
+
+            evidence = json.loads(
+                evidence_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(evidence["outcome"], "timeout")
+            self.assertFalse(evidence["ping_succeeded"])
+            self.assertEqual(evidence["attempt_count"], 3)
+            self.assertEqual(evidence["elapsed_seconds"], 12.0)
+
+    def test_network_readiness_signal_remains_candidate_claim(self) -> None:
+        endpoint = {
+            "host": "192.168.0.1",
+            "port": 80,
+            "protocol": "http",
+        }
+        clock = FakeClock()
+        runtime = RuntimeStub()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence_path = (
+                Path(temporary)
+                / "persistent-readiness.json"
+            )
+
+            with mock.patch(
+                "adapters.firmae.entrypoint.time.monotonic",
+                side_effect=clock.monotonic,
+            ), mock.patch(
+                "adapters.firmae.entrypoint.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="",
+                ),
+            ), mock.patch(
+                "adapters.firmae.entrypoint._scan_candidate_endpoints",
+                return_value=[endpoint],
+            ):
+                endpoints, network_ready = (
+                    wait_for_candidate_network_readiness(
+                        runtime=runtime,
+                        address="192.168.0.1",
+                        timeout_seconds=12.0,
+                        evidence_path=evidence_path,
+                    )
+                )
+
+            self.assertTrue(network_ready)
+            self.assertEqual(endpoints, [endpoint])
+
+            evidence = json.loads(
+                evidence_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                evidence["outcome"],
+                "network_ready",
+            )
+            self.assertEqual(
+                evidence["candidate_endpoint_claims"],
+                [endpoint],
+            )
+
     def test_retries_until_endpoint_is_found(self) -> None:
         endpoint = {
             "host": "192.168.0.1",

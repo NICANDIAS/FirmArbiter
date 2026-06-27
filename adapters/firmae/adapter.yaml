@@ -3,7 +3,7 @@ adapter:
   id: firmae
   display_name: FirmAE Adapter
   description: VERITAS reference adapter for a pinned FirmAE source revision
-  version: 0.2.3
+  version: 0.2.4
   contract_version: '1.0'
 candidate:
   name: FirmAE

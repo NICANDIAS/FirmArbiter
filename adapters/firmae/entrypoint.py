@@ -1617,16 +1617,39 @@ def _scan_candidate_endpoints(
     return endpoints
 
 
-def wait_for_candidate_readiness(
+def wait_for_candidate_network_readiness(
     *,
     runtime: RuntimeController,
     address: str,
     timeout_seconds: float,
     evidence_path: Path,
-) -> list[dict[str, Any]]:
-    deadline = time.monotonic() + timeout_seconds
+    poll_interval_seconds: float = 5.0,
+) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Observe candidate-reported network readiness without deciding boot.
+
+    ICMP or a supported TCP endpoint is a FirmAE network-readiness
+    signal. A timeout is a valid candidate outcome: the persistent
+    runtime remained alive, but no network-readiness claim appeared.
+    Independent VERITAS boot validation uses guest-level evidence and
+    therefore remains separate from this observation.
+    """
+    if timeout_seconds <= 0:
+        raise ValueError(
+            "timeout_seconds must be positive"
+        )
+
+    if poll_interval_seconds <= 0:
+        raise ValueError(
+            "poll_interval_seconds must be positive"
+        )
+
+    started_at = utc_now()
+    started_monotonic = time.monotonic()
+    deadline = started_monotonic + timeout_seconds
     latest_ping_output = ""
     latest_endpoints: list[dict[str, Any]] = []
+    attempt_count = 0
 
     while time.monotonic() < deadline:
         return_code = runtime.poll()
@@ -1638,8 +1661,8 @@ def wait_for_candidate_readiness(
                 "candidate_execution",
                 (
                     "FirmAE persistent runtime exited with "
-                    f"code {return_code} before readiness "
-                    "was reported"
+                    f"code {return_code} before network readiness "
+                    "was observed"
                 ),
             )
 
@@ -1656,6 +1679,7 @@ def wait_for_candidate_readiness(
             text=True,
             capture_output=True,
         )
+        attempt_count += 1
         latest_ping_output = (
             completed.stdout + completed.stderr
         )
@@ -1664,18 +1688,31 @@ def wait_for_candidate_readiness(
             address=address,
             timeout_seconds=0.5,
         )
-
-        if (
+        network_ready = (
             completed.returncode == 0
-            or latest_endpoints
-        ):
+            or bool(latest_endpoints)
+        )
+
+        if network_ready:
+            elapsed_seconds = max(
+                0.0,
+                time.monotonic() - started_monotonic,
+            )
             evidence_path.write_text(
                 json.dumps(
                     {
                         "schema_version": SCHEMA_VERSION,
                         "adapter_id": ADAPTER_ID,
+                        "started_at": started_at,
                         "observed_at": utc_now(),
                         "address": address,
+                        "timeout_seconds": timeout_seconds,
+                        "poll_interval_seconds": (
+                            poll_interval_seconds
+                        ),
+                        "attempt_count": attempt_count,
+                        "elapsed_seconds": elapsed_seconds,
+                        "outcome": "network_ready",
                         "ping_succeeded": (
                             completed.returncode == 0
                         ),
@@ -1690,17 +1727,39 @@ def wait_for_candidate_readiness(
                 + "\n",
                 encoding="utf-8",
             )
-            return latest_endpoints
+            return latest_endpoints, True
 
-        time.sleep(5)
+        remaining_seconds = deadline - time.monotonic()
 
+        if remaining_seconds <= 0:
+            break
+
+        time.sleep(
+            min(
+                poll_interval_seconds,
+                remaining_seconds,
+            )
+        )
+
+    elapsed_seconds = max(
+        0.0,
+        time.monotonic() - started_monotonic,
+    )
     evidence_path.write_text(
         json.dumps(
             {
                 "schema_version": SCHEMA_VERSION,
                 "adapter_id": ADAPTER_ID,
+                "started_at": started_at,
                 "observed_at": utc_now(),
                 "address": address,
+                "timeout_seconds": timeout_seconds,
+                "poll_interval_seconds": (
+                    poll_interval_seconds
+                ),
+                "attempt_count": attempt_count,
+                "elapsed_seconds": elapsed_seconds,
+                "outcome": "timeout",
                 "ping_succeeded": False,
                 "ping_output": latest_ping_output,
                 "candidate_endpoint_claims": (
@@ -1714,17 +1773,7 @@ def wait_for_candidate_readiness(
         encoding="utf-8",
     )
 
-    raise AdapterOperationalError(
-        "FIRMAE_BOOT_NOT_REPORTED",
-        "candidate_execution",
-        (
-            "FirmAE persistent runtime produced neither "
-            "ICMP reachability nor a supported TCP endpoint "
-            f"at {address} within "
-            f"{timeout_seconds:.0f} seconds"
-        ),
-    )
-
+    return latest_endpoints, False
 
 
 def _write_endpoint_discovery_evidence(
@@ -2257,31 +2306,49 @@ def dispatch_candidate(
             )
         )
 
-        readiness_endpoints = (
-            wait_for_candidate_readiness(
-                runtime=runtime,
-                address=addresses[0],
-                timeout_seconds=boot_timeout,
-                evidence_path=(
-                    runtime_evidence_path
-                    / "persistent-readiness.json"
-                ),
-            )
+        (
+            readiness_endpoints,
+            network_readiness_observed,
+        ) = wait_for_candidate_network_readiness(
+            runtime=runtime,
+            address=addresses[0],
+            timeout_seconds=boot_timeout,
+            evidence_path=(
+                runtime_evidence_path
+                / "persistent-readiness.json"
+            ),
         )
 
-        event_writer.emit(
-            "candidate_boot_reported",
-            state="running",
-        )
+        if network_readiness_observed:
+            event_writer.emit(
+                "candidate_boot_reported",
+                state="running",
+            )
+            emulation_message = (
+                "FirmAE reported a persistent firmware runtime "
+                "with an ICMP or supported TCP network-readiness "
+                "signal"
+            )
+        else:
+            emulation_message = (
+                "FirmAE persistent runtime remained active for the "
+                f"full {boot_timeout:.0f}-second network-readiness "
+                "observation window, but produced no ICMP or "
+                "supported TCP readiness signal; independent "
+                "VERITAS boot validation will use guest-level "
+                "evidence"
+            )
+
         event_writer.emit(
             "stage_completed",
             state="running",
             stage="emulate",
-            stage_outcome="succeeded",
-            message=(
-                "FirmAE reported a persistent firmware runtime "
-                "ready for independent validation"
+            stage_outcome=(
+                "succeeded"
+                if network_readiness_observed
+                else "inconclusive"
             ),
+            message=emulation_message,
         )
 
         endpoint_timeout = float(
