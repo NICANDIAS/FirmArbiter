@@ -1,0 +1,44 @@
+schema_version: '1.0'
+adapter:
+  id: firmadyne
+  display_name: FIRMADYNE Adapter
+  description: VERITAS adapter for a pinned FIRMADYNE source revision
+  version: 0.1.0
+  contract_version: '1.0'
+candidate:
+  name: FIRMADYNE
+  source:
+    type: git
+    repository: https://github.com/firmadyne/firmadyne.git
+    commit: 11cb574cda0a5540ab7e36aa9b43679dc02c5788
+  patches:
+  - path: patches/0001-makeimage-cleanup-compatibility.patch
+    sha256: 5bfd2b23dea8577e9c271b66ed36511ebc4e0e1b604cd15195330a8a43d52cb2
+    description: Fixes losetup device path in makeImage.sh cleanup block
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+  - ubuntu:22.04
+runtime:
+  run_as_root: true
+  network: none
+  requirements:
+  - loop-devices
+  - device-mapper
+  - tun-tap
+  - net-admin
+  - full-privileged
+capabilities:
+  stages:
+  - unpack
+  - emulate
+  - endpoint-discovery
+  firmware_architectures:
+  - unknown
+  endpoint_protocols:
+  - http
+  hints:
+    architecture: optional
+    vendor: unsupported

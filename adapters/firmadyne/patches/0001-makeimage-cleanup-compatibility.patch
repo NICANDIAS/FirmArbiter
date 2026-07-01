@@ -1,0 +1,23 @@
+--- a/scripts/makeImage.sh
++++ b/scripts/makeImage.sh
+@@ -124,6 +124,17 @@
+ sync
+ umount "${DEVICE}"
+ echo "----Deleting device mapper----"
+-kpartx -d "${IMAGE}"
+-losetup -d "${DEVICE}" &>/dev/null
+-dmsetup remove $(basename "$DEVICE") &>/dev/null
++# VERITAS compatibility fix:
++# DEVICE is a mapper partition such as /dev/mapper/loop18p1.
++# losetup requires the parent loop device, not the partition node.
++MAPPER_NAME="$(basename "${DEVICE}")"
++LOOP_DEVICE="$(losetup -j "${IMAGE}" | awk -F: 'NR == 1 {print $1}')"
++
++kpartx -d "${IMAGE}" || true
++
++if [ -n "${LOOP_DEVICE}" ]; then
++    losetup -d "${LOOP_DEVICE}" || true
++fi
++
++# kpartx may already have removed this mapping.
++dmsetup remove "${MAPPER_NAME}" >/dev/null 2>&1 || true
