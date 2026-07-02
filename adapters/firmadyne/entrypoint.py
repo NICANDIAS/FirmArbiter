@@ -240,7 +240,7 @@ class HeartbeatWorker:
 def pg_env(request: dict[str, Any]) -> dict[str, str]:
     env = os.environ.copy()
     env["PGHOST"] = "127.0.0.1"
-    env["PGPORT"] = "55432"
+    env["PGPORT"] = "5432"
     env["PGUSER"] = "firmadyne"
     env["PGPASSWORD"] = "firmadyne"
     env["PGDATABASE"] = "firmware"
@@ -261,14 +261,14 @@ def start_postgres() -> None:
         )
     env = {
         "PGHOST": "127.0.0.1",
-        "PGPORT": "55432",
+        "PGPORT": "5432",
         "PGUSER": "firmadyne",
         "PGPASSWORD": "firmadyne",
         "PGDATABASE": "firmware",
     }
     for attempt in range(30):
         r = subprocess.run(
-            ["pg_isready", "-h", "127.0.0.1", "-p", "55432", "-U", "firmadyne"],
+            ["pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "postgres"],
             capture_output=True, text=True, check=False, env={**os.environ, **env},
         )
         if r.returncode == 0:
@@ -736,6 +736,9 @@ def main() -> int:
                 env=env,
                 stage_start=unpack_start,
             )
+
+            if not unpack_ok:
+                failure_seen = True
 
             if unpack_ok:
                 iid = iid_holder[0]

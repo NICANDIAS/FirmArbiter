@@ -22,6 +22,10 @@ RUN apt-get update -qq && \
         liblzma-dev liblzo2-dev zlib1g-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Pre-initialise PostgreSQL cluster at build time so runtime start is fast
+# and does not require amd64 pg_createcluster under QEMU translation.
+RUN pg_createcluster 14 main --start-conf=manual || true
+
 # Sasquatch — FIRMADYNE-documented revision for big-endian LZMA SquashFS
 ARG SASQUATCH_REPO=https://github.com/firmadyne/sasquatch.git
 ARG SASQUATCH_COMMIT=287e4a8e059d3ee7a5f643211fcf00c292cd6f4d
