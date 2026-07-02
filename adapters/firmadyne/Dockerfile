@@ -1,7 +1,7 @@
 # adapters/firmadyne/Dockerfile
 # Builds the VERITAS FIRMADYNE adapter image.
 # Platform: linux/amd64
-FROM --platform=linux/amd64 ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:22.04@sha256:ce941a2a18bbb922e434d6d6d2b31e571a5c3826eaf6ada0a41dcc905bd2d906
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
