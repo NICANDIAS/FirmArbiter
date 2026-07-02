@@ -23,6 +23,17 @@ ADAPTER_ID = "firmadyne"
 SCHEMA_VERSION = "1.0"
 CONTRACT_VERSION = "1.0"
 
+SUPPORTED_STAGES = {"unpack", "emulate", "endpoint-discovery"}
+
+import re as _re
+RUN_ID_PATTERN = _re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
+
+
+def require_string(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ContractError(f"{name} must be a non-empty string")
+    return value
+
 FIRMADYNE_HOME = Path("/opt/firmadyne")
 FIRMADYNE_IMAGES = FIRMADYNE_HOME / "images"
 FIRMADYNE_SCRATCH = FIRMADYNE_HOME / "scratch"
@@ -298,7 +309,7 @@ def reset_postgres(env: dict[str, str]) -> None:
             "TRUNCATE TABLE object_to_image, object, image, "
             "product, brand RESTART IDENTITY CASCADE;",
         ],
-        phase="infrastructure",
+        phase="adapter_setup",
         error_code="FIRMADYNE_POSTGRES_RESET_FAILED",
         env=env,
     )
@@ -361,8 +372,7 @@ def stage_unpack(
             "stage_completed",
             stage="unpack",
             stage_outcome="failed",
-            duration_seconds=round(duration, 3),
-            detail="Extractor produced no image ID in database.",
+            message="Extractor produced no image ID in database.",
         )
         return False
 
@@ -375,21 +385,26 @@ def stage_unpack(
             "stage_completed",
             stage="unpack",
             stage_outcome="failed",
-            duration_seconds=round(duration, 3),
-            detail=f"Root filesystem archive missing: {rootfs}",
+            message="Root filesystem archive missing.",
         )
         return False
 
-    # Copy rootfs to artifacts
-    import shutil
+    # Copy rootfs to artifacts and extract for VERITAS independent validation
+    import shutil, tarfile
     rootfs_copy = artifacts_path / "rootfs.tar.gz"
     shutil.copy2(str(rootfs), str(rootfs_copy))
 
+    # VERITAS expects extracted rootfs at artifacts/unpack/rootfs/
+    unpack_dir = artifacts_path / "unpack" / "rootfs"
+    unpack_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with tarfile.open(str(rootfs_copy), "r:gz") as tf:
+            tf.extractall(str(unpack_dir))
+    except Exception as exc:
+        print(f"[VERITAS][firmadyne] WARNING: rootfs extraction for validation failed: {exc}", flush=True)
+
     event_writer.emit(
         "extraction_complete",
-        iid=iid,
-        rootfs_path=str(rootfs_copy),
-        sha256=sha256_file(rootfs),
     )
 
     # Stage 2: architecture detection
@@ -397,7 +412,7 @@ def stage_unpack(
 
     run_checked(
         ["bash", str(FIRMADYNE_HOME / "scripts/getArch.sh"), str(rootfs)],
-        phase="unpack",
+        phase="candidate_execution",
         error_code="FIRMADYNE_ARCH_DETECTION_FAILED",
         cwd=str(FIRMADYNE_HOME),
         env=env,
@@ -415,8 +430,7 @@ def stage_unpack(
             "stage_completed",
             stage="unpack",
             stage_outcome="failed",
-            duration_seconds=round(duration, 3),
-            detail="Architecture detection returned nothing.",
+            message="Architecture detection returned nothing.",
         )
         return False
 
@@ -425,9 +439,7 @@ def stage_unpack(
         "stage_completed",
         stage="unpack",
         stage_outcome="succeeded",
-        duration_seconds=round(duration, 3),
-        iid=iid,
-        architecture=arch,
+        message="Filesystem extracted and architecture detected.",
     )
 
     print(f"[VERITAS][firmadyne] Architecture: {arch}", flush=True)
@@ -457,7 +469,7 @@ def stage_emulate(
 
     run_checked(
         ["python3", str(FIRMADYNE_HOME / "scripts/tar2db.py"), "-i", iid, "-f", str(rootfs)],
-        phase="emulate",
+        phase="candidate_execution",
         error_code="FIRMADYNE_TAR2DB_FAILED",
         cwd=str(FIRMADYNE_HOME),
         env=env,
@@ -467,7 +479,7 @@ def stage_emulate(
 
     run_checked(
         ["bash", str(FIRMADYNE_HOME / "scripts/makeImage.sh"), iid, arch],
-        phase="emulate",
+        phase="candidate_execution",
         error_code="FIRMADYNE_MAKEIMAGE_FAILED",
         cwd=str(FIRMADYNE_HOME),
         env=env,
@@ -485,7 +497,7 @@ def stage_emulate(
 
     run_checked(
         ["bash", str(FIRMADYNE_HOME / "scripts/inferNetwork.sh"), iid, arch],
-        phase="emulate",
+        phase="candidate_execution",
         error_code="FIRMADYNE_INFER_NETWORK_FAILED",
         cwd=str(FIRMADYNE_HOME),
         env=env,
@@ -605,8 +617,7 @@ def stage_emulate(
         "stage_completed",
         stage="emulate",
         stage_outcome="succeeded",
-        duration_seconds=round(duration, 3),
-        candidate_reported_ip=target_ip,
+        message="QEMU launched and firmware runtime is active.",
     )
 
     print(
@@ -654,17 +665,14 @@ def stage_endpoint_discovery(
             "stage_completed",
             stage="endpoint-discovery",
             stage_outcome="succeeded",
-            duration_seconds=round(duration, 3),
-            endpoint=f"http://{target_ip}:80",
+            message=f"HTTP endpoint found at {target_ip}:80.",
         )
     else:
         event_writer.emit(
             "stage_completed",
             stage="endpoint-discovery",
             stage_outcome="failed",
-            duration_seconds=round(duration, 3),
-            detail=f"No TCP response on {target_ip}:80 "
-                   f"within {endpoint_wait_timeout}s.",
+            message=f"No TCP response within {endpoint_wait_timeout:.0f}s.",
         )
 
 
@@ -672,45 +680,90 @@ def stage_endpoint_discovery(
 # Main
 # ---------------------------------------------------------------------------
 
+def load_and_validate_request(
+    request_path: Path,
+) -> dict[str, Any]:
+    try:
+        request = json.loads(
+            request_path.read_text(encoding="utf-8")
+        )
+    except FileNotFoundError as exc:
+        raise ContractError(
+            f"Request file does not exist: {request_path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ContractError(
+            f"Request is not valid JSON: {exc}"
+        ) from exc
+
+    request = require_object(request, "request")
+
+    run = require_object(request.get("run"), "run")
+    firmware = require_object(request.get("firmware"), "firmware")
+    lifecycle = require_object(request.get("lifecycle"), "lifecycle")
+    paths = require_object(request.get("paths"), "paths")
+
+    run_id = require_string(run.get("run_id"), "run.run_id")
+
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        raise ContractError(f"Invalid run.run_id: {run_id}")
+
+    adapter_id = require_string(run.get("adapter_id"), "run.adapter_id")
+
+    if adapter_id != ADAPTER_ID:
+        raise ContractError(
+            f"Request adapter_id must be {ADAPTER_ID!r}, "
+            f"not {adapter_id!r}"
+        )
+
+    firmware_contract_path = firmware.get("path")
+
+    if firmware_contract_path != "/veritas/input/firmware":
+        raise ContractError(
+            "firmware.path must be '/veritas/input/firmware'"
+        )
+
+    firmware_path = map_contract_path(firmware_contract_path)
+
+    if not firmware_path.is_file():
+        raise ContractError(
+            f"Firmware input does not exist: {firmware_path}"
+        )
+
+    request["_firmware_path"] = firmware_path
+    request["_run_id"] = run_id
+
+    return request
+
+
 def main() -> int:
-    if len(sys.argv) < 2:
+    if len(sys.argv) != 2:
         print(
-            "[VERITAS][firmadyne] ERROR: usage: entrypoint.py <request.json>",
+            "Usage: entrypoint.py REQUEST_PATH",
             file=sys.stderr,
         )
-        return 3
+        return 2
 
     request_path = Path(sys.argv[1])
-    if not request_path.is_file():
-        print(
-            f"[VERITAS][firmadyne] ERROR: request file not found: {request_path}",
-            file=sys.stderr,
-        )
-        return 3
-
     try:
-        request = json.loads(request_path.read_text())
-    except Exception as exc:
-        print(
-            f"[VERITAS][firmadyne] ERROR: could not parse request: {exc}",
-            file=sys.stderr,
-        )
-        return 3
-
-    try:
-        lifecycle = require_object(request.get("lifecycle"), "lifecycle")
-        paths = require_object(request.get("paths"), "paths")
+        request = load_and_validate_request(request_path)
     except ContractError as exc:
-        print(f"[VERITAS][firmadyne] CONTRACT ERROR: {exc}", file=sys.stderr)
-        return 3
+        print(
+            f"[VERITAS][firmadyne] contract error: {exc}",
+            file=sys.stderr,
+        )
+        return 2
 
-    run_id = request.get("run_id", "unknown")
+    paths = request["paths"]
+    run_id = request["_run_id"]
     adapter_id = ADAPTER_ID
+    firmware_path = request["_firmware_path"]
+
+    lifecycle = require_object(request.get("lifecycle"), "lifecycle")
 
     events_path = map_contract_path(paths["events"])
     artifacts_path = map_contract_path(paths["artifacts"])
-    firmware_path = map_contract_path(paths["firmware"])
-    control_directory = map_contract_path(paths.get("control", "/veritas/control"))
+    control_directory = map_contract_path(paths["control"])
     shutdown_path = control_directory / "shutdown.json"
 
     artifacts_path.mkdir(parents=True, exist_ok=True)
