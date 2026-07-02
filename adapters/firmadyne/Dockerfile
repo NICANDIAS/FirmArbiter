@@ -22,6 +22,9 @@ RUN apt-get update -qq && \
         liblzma-dev liblzo2-dev zlib1g-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Create firmadyne system user required by makeImage.sh
+RUN useradd -m -s /bin/bash firmadyne && echo 'firmadyne ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
 # Pre-initialise PostgreSQL cluster at build time so runtime start is fast
 # and does not require amd64 pg_createcluster under QEMU translation.
 RUN pg_createcluster 14 main --start-conf=manual || true
@@ -47,6 +50,9 @@ RUN git clone "${FIRMADYNE_REPO}" /opt/firmadyne && \
     cd /opt/firmadyne && \
     git checkout "${FIRMADYNE_COMMIT}" && \
     git submodule update --init --recursive
+
+# Download FIRMADYNE runtime binaries (kernels, console, libnvram)
+RUN cd /opt/firmadyne && sh ./download.sh
 
 # Apply VERITAS compatibility patch to makeImage.sh
 COPY patches/0001-makeimage-cleanup-compatibility.patch /tmp/
