@@ -245,6 +245,8 @@ def pg_env(request: dict[str, Any]) -> dict[str, str]:
     env["PGPASSWORD"] = "firmadyne"
     env["PGDATABASE"] = "firmware"
     env["USER"] = "firmadyne"
+    # Required by firmadyne.config — all helper scripts derive paths from this.
+    env["FIRMWARE_DIR"] = str(FIRMADYNE_HOME)
     return env
 
 
@@ -497,24 +499,46 @@ def stage_emulate(
             "Network inference produced no run.sh.",
         )
 
-    # Extract candidate-reported IP
-    import re
+    # Copy run.sh to artifacts before any parsing attempt
+    import shutil, re
+    shutil.copy2(str(run_sh), str(artifacts_path / "generated_run.sh"))
+
+    # Extract candidate-reported IP — try multiple patterns
     run_sh_text = run_sh.read_text()
-    match = re.search(
-        r"sudo ip route add (\S+)",
-        run_sh_text,
-    )
+
+    # Pattern 1: sudo ip route add <IP>
+    match = re.search(r"sudo\s+ip\s+route\s+add\s+(\d+\.\d+\.\d+\.\d+)", run_sh_text)
+    # Pattern 2: -net <IP>
+    if not match:
+        match = re.search(r"-net\s+(\d+\.\d+\.\d+\.\d+)", run_sh_text)
+    # Pattern 3: any bare IP-like string after NET=
+    if not match:
+        match = re.search(r"NET=(\d+\.\d+\.\d+\.\d+)", run_sh_text)
+
     target_ip = match.group(1) if match else ""
 
-    if not target_ip:
+    # Detect network mode: TAP (IP known) vs socket (IP unknown until runtime)
+    socket_mode = "netdev socket" in run_sh_text or "listen=:" in run_sh_text
+    tap_mode = "tap" in run_sh_text and target_ip
+
+    if not target_ip and not socket_mode:
+        # Log the run.sh content for diagnosis
+        (artifacts_path / "run_sh_debug.txt").write_text(run_sh_text)
         raise AdapterOperationalError(
             "FIRMADYNE_NO_TARGET_IP",
             "emulate",
-            "Could not parse firmware IP from run.sh.",
+            f"Could not parse firmware IP from run.sh and no socket mode detected. "
+            f"Content saved to run_sh_debug.txt. "
+            f"First 500 chars: {run_sh_text[:500]}",
         )
 
-    import shutil
-    shutil.copy2(str(run_sh), str(artifacts_path / "generated_run.sh"))
+    if socket_mode and not target_ip:
+        # Socket-mode: IP not known until firmware boots.
+        # We launch QEMU and detect boot from process survival only.
+        target_ip = "unknown"
+        (artifacts_path / "network_mode.txt").write_text("socket\n")
+    else:
+        (artifacts_path / "network_mode.txt").write_text(f"tap:{target_ip}\n")
 
     print("[VERITAS][firmadyne] Stage 6: launching final emulation", flush=True)
 
@@ -527,33 +551,50 @@ def stage_emulate(
         env=env,
     )
 
-    tap_name = f"tap{iid}_0"
-    tap_ready = False
-    deadline = time.monotonic() + 20
+    # Detect network mode from run.sh content
+    socket_mode = "netdev socket" in run_sh_text or "listen=:" in run_sh_text
 
-    while time.monotonic() < deadline:
-        if qemu_proc.poll() is not None:
-            raise AdapterOperationalError(
-                "FIRMADYNE_QEMU_EARLY_EXIT",
-                "emulate",
-                "Final QEMU process exited before TAP interface appeared.",
+    if socket_mode:
+        # Socket-mode networking: no TAP interface created on host.
+        # Confirm QEMU stays alive for at least 10 seconds.
+        print("[VERITAS][firmadyne] Socket-mode networking detected — waiting for QEMU stability", flush=True)
+        for _i in range(10):
+            if qemu_proc.poll() is not None:
+                raise AdapterOperationalError(
+                    "FIRMADYNE_QEMU_EARLY_EXIT",
+                    "emulate",
+                    "QEMU exited within 10s of launch (socket-mode).",
+                )
+            time.sleep(1)
+        print("[VERITAS][firmadyne] QEMU stable in socket mode", flush=True)
+    else:
+        tap_name = f"tap{iid}_0"
+        tap_ready = False
+        deadline = time.monotonic() + 20
+
+        while time.monotonic() < deadline:
+            if qemu_proc.poll() is not None:
+                raise AdapterOperationalError(
+                    "FIRMADYNE_QEMU_EARLY_EXIT",
+                    "emulate",
+                    "Final QEMU process exited before TAP interface appeared.",
+                )
+            r = subprocess.run(
+                ["ip", "link", "show", tap_name],
+                capture_output=True, check=False,
             )
-        r = subprocess.run(
-            ["ip", "link", "show", tap_name],
-            capture_output=True, check=False,
-        )
-        if r.returncode == 0:
-            tap_ready = True
-            break
-        time.sleep(1)
+            if r.returncode == 0:
+                tap_ready = True
+                break
+            time.sleep(1)
 
-    if not tap_ready:
-        qemu_proc.terminate()
-        raise AdapterOperationalError(
-            "FIRMADYNE_TAP_TIMEOUT",
-            "emulate",
-            f"TAP interface {tap_name} did not appear within 20s.",
-        )
+        if not tap_ready:
+            qemu_proc.terminate()
+            raise AdapterOperationalError(
+                "FIRMADYNE_TAP_TIMEOUT",
+                "emulate",
+                f"TAP interface {tap_name} did not appear within 20s.",
+            )
 
     # Write deterministic boot marker for VERITAS probe
     boot_ip_file = artifacts_path / "veritas_boot_ip.txt"
