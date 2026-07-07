@@ -1,0 +1,65 @@
+diff --git a/Dockerfile b/Dockerfile
+index 86d50b55..f7ed5d2a 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -8,7 +8,7 @@ WORKDIR /
+ RUN --mount=type=bind,target=/installer,source=./installer \
+     apt-get update && \
+     apt-get -y install wget kmod procps sudo dialog apt curl git && \
+-    yes | /installer.sh -s -D && \
++    yes | /installer.sh -s -D -g && \
+     ulimit -c 0 && rm -rf /var/lib/apt/lists/*
+ 
+ WORKDIR /emba
+diff --git a/installer/IL10_system_emulator.sh b/installer/IL10_system_emulator.sh
+index 27d8b9f0..c128972f 100755
+--- a/installer/IL10_system_emulator.sh
++++ b/installer/IL10_system_emulator.sh
+@@ -23,8 +23,8 @@ IL10_system_emulator() {
+     INSTALL_APP_LIST=()
+     cd "${HOME_PATH}" || (echo "Could not install EMBA component system emulator" && exit 1)
+ 
+-    UML_UTILITIES_URL="http://deb.debian.org/debian/pool/main/u/uml-utilities/uml-utilities_20070815.4-2.1_amd64.deb"
+-    LIBFUSE_URL="http://deb.debian.org/debian/pool/main/f/fuse/libfuse2t64_2.9.9-9_amd64.deb"
++    UML_UTILITIES_URL="http://deb.debian.org/debian/pool/main/u/uml-utilities/uml-utilities_20070815.4-2.1_$(dpkg --print-architecture).deb"
++    LIBFUSE_URL="http://deb.debian.org/debian/pool/main/f/fuse/libfuse2t64_2.9.9-9_$(dpkg --print-architecture).deb"
+ 
+     print_tool_info "busybox-static" 1
+     print_tool_info "bash-static" 1
+@@ -88,8 +88,8 @@ IL10_system_emulator() {
+       download_file "uml-utilities.deb" "${UML_UTILITIES_URL}" "external/uml-utilities.deb"
+       download_file "libfuse2t64" "${LIBFUSE_URL}" "external/libfuse2t64.deb"
+       dpkg -i "external/libfuse2t64.deb"
+-      dpkg -i "external/uml-utilities.deb"
+       rm -f "external/libfuse2t64.deb"
++      dpkg -i "external/uml-utilities.deb"
+       rm -f "external/uml-utilities.deb"
+ 
+       download_file "busybox.zip" "https://github.com/EMBA-support-repos/EMBA_emulation_kernel-v4.1.52/releases/download/4.1.52-init/busybox-v${BB_VER}.zip" "external/EMBA_Live_bins/busybox.zip"
+diff --git a/installer/IP61_unblob.sh b/installer/IP61_unblob.sh
+index 9ab210f9..bd851224 100755
+--- a/installer/IP61_unblob.sh
++++ b/installer/IP61_unblob.sh
+@@ -52,9 +52,9 @@ IP61_unblob() {
+     print_tool_info "libmagic1t64" 1
+     print_tool_info "e2fsprogs" 1
+     print_tool_info "libext2fs2" 1
++    print_tool_info "sasquatch" 1
+ 
+     print_file_info "7zip.tar.xz" "7zip.tar.xz" "https://www.7-zip.org/a/7z2600-linux-x64.tar.xz" "external/7zip.tar.xz"
+-    print_file_info "sasquatch_1.0_amd64.deb" "sasquatch_1.0_amd64.deb" "https://github.com/onekey-sec/sasquatch/releases/download/sasquatch-v4.5.1-6/sasquatch_1.0_amd64.deb" "external/sasquatch_1.0_amd64.deb"
+ 
+     if [[ "${LIST_DEP}" -eq 1 ]] || [[ "${DOCKER_SETUP}" -eq 1 ]]; then
+       ANSWER=("n")
+@@ -75,11 +75,6 @@ IP61_unblob() {
+       ln -sf /usr/local/bin/7zz /usr/local/bin/7z
+       rm -f external/7zip.tar.xz
+ 
+-      download_file "sasquatch_1.0_amd64.deb" "https://github.com/onekey-sec/sasquatch/releases/download/sasquatch-v4.5.1-6/sasquatch_1.0_amd64.deb" "external/sasquatch_1.0_amd64.deb"
+-      echo "[*] Installing sasquatch"
+-      dpkg -i external/sasquatch_1.0_amd64.deb
+-      rm external/sasquatch_1.0_amd64.deb
+-
+       echo "[*] Cloning unblob"
+       git clone https://github.com/onekey-sec/unblob.git external/unblob
+       cd external/unblob || exit 1
