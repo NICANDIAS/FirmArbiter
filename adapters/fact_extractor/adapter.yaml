@@ -1,0 +1,42 @@
+id: fact-extractor
+version: 0.1.0
+contract_version: "1.0"
+
+candidate:
+  name: "FACT extractor (fkiecad/fact_extractor)"
+  source_repo: "https://github.com/fkie-cad/fact_extractor"
+  pinned_commit: "master"  # TODO: pin to exact commit SHA before final experiments
+  # NOTE: this is a raw binary carver (offset/type-based chunk extraction),
+  # NOT a filesystem-aware unpacker like FirmAE/FIRMADYNE. Its "unpack
+  # success" claim is semantically weaker — see entrypoint.py's run_unpack
+  # docstring for the full distinction. Do not treat its results as
+  # equivalent to a bootable filesystem extraction in paper comparisons.
+
+build:
+  dockerfile: null  # uses the published fkiecad/fact_extractor image directly,
+                      # no local build required
+  base_images:
+    - "fkiecad/fact_extractor:latest"  # amd64-only; runs via QEMU translation
+                                          # on this ARM64 host (same accepted
+                                          # pattern as FirmAE/FIRMADYNE)
+
+runtime:
+  platform: "linux/amd64"  # upstream image is amd64-only
+  network_mode: "none"
+  privileged: true   # required per fact_extractor's own documented usage
+  devices:
+    - "/dev:/dev"
+  # fact_extractor runs as a SIBLING container launched via a mounted
+  # Docker socket from this adapter's own entrypoint container — same
+  # identical-host-path mount requirement discovered onboarding EMBA.
+  # This adapter's own container needs /var/run/docker.sock mounted,
+  # and must itself be launched with host paths matching real host
+  # paths (not container-remapped aliases) for the sibling container's
+  # bind mounts to resolve correctly.
+  requires_docker_socket: true
+
+capabilities:
+  unpack: true
+  emulate: false
+  endpoint_discovery: false
+  reports_own_endpoint_claims: false

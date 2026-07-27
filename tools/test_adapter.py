@@ -132,7 +132,21 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
 
     image_name = f"veritas-adapter-{adapter_id}-smoketest"
 
-    with tempfile.TemporaryDirectory() as tmp:
+    # Use a manually-managed temp dir instead of TemporaryDirectory's
+    # context manager. Adapters that launch privileged/root sibling
+    # containers can leave root-owned files in the shared host mount.
+    # tempfile's own cleanup tries to chmod() files as part of its
+    # recovery logic, which requires OWNERSHIP (not just permission
+    # bits) — chmod('a+rwX') on the adapter side does NOT fix this,
+    # since a non-root cleanup process still isn't the file's owner.
+    # ignore_cleanup_errors=True also does not reliably swallow errors
+    # raised from within tempfile's own chmod-retry callback on this
+    # Python version. Fixed by bypassing tempfile cleanup entirely and
+    # force-removing via a plain shell command instead, which does not
+    # require ownership of individual files — only write+execute on
+    # their parent directory. Discovered onboarding fact_extractor.
+    tmp = tempfile.mkdtemp(prefix="veritas_smoketest_")
+    try:
         work_dir = Path(tmp)
         request_path, events_path, firmware_path = build_synthetic_request(work_dir, adapter_id)
         print(f"Synthetic request written to {request_path}")
@@ -195,6 +209,13 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
         check("Mandatory events occur in correct order", in_order)
 
         return container_ok and events_exist and violations == 0 and in_order
+    finally:
+        # Force-remove via shell rather than tempfile's own cleanup —
+        # see comment above tmp = tempfile.mkdtemp(...) for why. rm -rf
+        # only needs write+execute on parent directories, not ownership
+        # of individual files, so it works even on root-owned content
+        # left behind by privileged sibling containers.
+        subprocess.run(["rm", "-rf", tmp], check=False)
 
 
 def main():
