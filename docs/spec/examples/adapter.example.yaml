@@ -3,7 +3,7 @@ schema_version: "1.0"
 adapter:
   id: example-tool
   display_name: Example Tool Adapter
-  description: Neutral example of a VERITAS Adapter Contract v1 package.
+  description: Neutral example of a FIRMARBITER Adapter Contract v1 package.
   version: "0.1.0"
   contract_version: "1.0"
 

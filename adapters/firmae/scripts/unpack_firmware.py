@@ -177,7 +177,7 @@ def write_json(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run FirmAE extraction for VERITAS"
+        description="Run FirmAE extraction for FIRMARBITER"
     )
 
     parser.add_argument(

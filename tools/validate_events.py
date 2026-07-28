@@ -75,7 +75,7 @@ def validate_file(events_path, schema_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate a VERITAS adapter events.jsonl file")
+    parser = argparse.ArgumentParser(description="Validate a FIRMARBITER adapter events.jsonl file")
     parser.add_argument("events_file", help="Path to events.jsonl")
     parser.add_argument("--schema", default=DEFAULT_SCHEMA_PATH, help="Path to adapter-event-v1.schema.json")
     args = parser.parse_args()

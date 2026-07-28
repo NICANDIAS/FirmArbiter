@@ -1,8 +1,8 @@
 # adapters/_template/lifecycle/signals.py
 """
-ShutdownCoordinator — unifies the two ways VERITAS asks an adapter to stop:
+ShutdownCoordinator — unifies the two ways FIRMARBITER asks an adapter to stop:
   1. SIGTERM sent directly to the container process
-  2. /veritas/control/shutdown.json written by the coordinator
+  2. /firmarbiter/control/shutdown.json written by the coordinator
 
 Tool-agnostic by design: it knows nothing about FirmAE, FIRMADYNE, EMBA,
 or any other candidate. Any adapter built on the template gets both
@@ -19,7 +19,7 @@ class ShutdownCoordinator:
     def __init__(self, control_dir, poll_interval_seconds=2):
         """
         control_dir: the 'control' path from request.json's paths section
-                     (e.g. "/veritas/control") — where shutdown.json appears
+                     (e.g. "/firmarbiter/control") — where shutdown.json appears
         poll_interval_seconds: how often to check for the shutdown marker
                                 file, independent of the heartbeat interval
         """

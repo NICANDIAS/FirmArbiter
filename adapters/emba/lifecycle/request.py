@@ -1,6 +1,6 @@
 # adapters/_template/lifecycle/request.py
 """
-load_and_validate_request() — reads /veritas/input/request.json and returns
+load_and_validate_request() — reads /firmarbiter/input/request.json and returns
 a validated, attribute-accessible view of it. Generalized so it is not
 shaped around any one candidate tool's assumptions.
 """
@@ -47,7 +47,7 @@ def _to_namespace(d):
     return d
 
 
-def load_and_validate_request(request_path="/veritas/input/request.json"):
+def load_and_validate_request(request_path="/firmarbiter/input/request.json"):
     path = Path(request_path)
     if not path.exists():
         raise RequestContractError(f"request.json not found at {request_path}")

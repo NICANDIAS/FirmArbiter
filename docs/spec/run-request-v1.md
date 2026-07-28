@@ -1,4 +1,4 @@
-# VERITAS Run Request v1
+# FIRMARBITER Run Request v1
 
 Status: Draft  
 Run-request schema version: 1.0  
@@ -6,7 +6,7 @@ Adapter Contract version: 1.0
 
 ## 1. Purpose
 
-A VERITAS run request is the machine-readable instruction supplied to one
+A FIRMARBITER run request is the machine-readable instruction supplied to one
 adapter for one firmware execution attempt.
 
 A distinct request is created for every firmware, adapter and repetition.
@@ -22,13 +22,13 @@ previous candidate executions.
 
 The request is mounted read-only at:
 
-`/veritas/input/request.json`
+`/firmarbiter/input/request.json`
 
 The canonical firmware object is mounted read-only at:
 
-`/veritas/input/firmware`
+`/firmarbiter/input/firmware`
 
-The complete `/veritas/input` directory is read-only.
+The complete `/firmarbiter/input` directory is read-only.
 
 ## 3. Firmware input semantics
 
@@ -39,7 +39,7 @@ Version 1 defines the firmware delivery semantic as:
 This means the adapter receives the exact bytes selected by the experiment
 manifest.
 
-VERITAS must not automatically unzip, unpack, rename based on candidate
+FIRMARBITER must not automatically unzip, unpack, rename based on candidate
 identity, select an archive member or otherwise transform the canonical
 firmware object before delivery.
 
@@ -47,7 +47,7 @@ The canonical firmware filename is always `firmware`. The original corpus
 filename is not supplied to the adapter because filenames may expose vendor,
 model, architecture or packaging hints.
 
-An adapter may create a private copy inside `/veritas/work` and perform its
+An adapter may create a private copy inside `/firmarbiter/work` and perform its
 native preprocessing there. The adapter must not modify the canonical input.
 
 ## 4. Run identity
@@ -134,10 +134,10 @@ Hints must not be derived from another candidate's results.
 
 The adapter receives these standard locations:
 
-- `/veritas/work` for private temporary candidate state;
-- `/veritas/artifacts` for retained candidate artifacts;
-- `/veritas/events/events.jsonl` for append-only contract events;
-- `/veritas/control` for lifecycle-control messages.
+- `/firmarbiter/work` for private temporary candidate state;
+- `/firmarbiter/artifacts` for retained candidate artifacts;
+- `/firmarbiter/events/events.jsonl` for append-only contract events;
+- `/firmarbiter/control` for lifecycle-control messages.
 
 Paths are fixed by Contract v1 and cannot be replaced by adapter-defined
 paths.

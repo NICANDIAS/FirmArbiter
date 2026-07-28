@@ -1,8 +1,8 @@
-# VERITAS
+# FIRMARBITER
 
-VERITAS — Validated Emulation and Rehosting Integrity Testing and Assessment Suite — is a Python benchmark harness for firmware security analysis tools.
+FIRMARBITER — Validated Emulation and Rehosting Integrity Testing and Assessment Suite — is a Python benchmark harness for firmware security analysis tools.
 
-VERITAS does **not** analyse firmware itself. It runs candidate tools such as FirmAE, FIRMADYNE, and EMBA, monitors their execution, and records structured results for fair comparison.
+FIRMARBITER does **not** analyse firmware itself. It runs candidate tools such as FirmAE, FIRMADYNE, and EMBA, monitors their execution, and records structured results for fair comparison.
 
 ## Current prototype status
 
@@ -19,7 +19,7 @@ Current capabilities include:
 
 ## Metrics
 
-VERITAS captures six benchmark metrics:
+FIRMARBITER captures six benchmark metrics:
 
 1. unpack success
 2. boot success
@@ -46,17 +46,17 @@ Generated outputs are ignored by Git.
 
 ## Configuration
 
-VERITAS uses a local configuration file called `veritas.conf`.
+FIRMARBITER uses a local configuration file called `firmarbiter.conf`.
 
 This file is machine-specific and is not committed to the repository.
 
 After cloning, create it from the example file:
 
-    cp veritas.example.conf veritas.conf
+    cp firmarbiter.example.conf firmarbiter.conf
 
-Then edit the paths inside `veritas.conf` to match your machine:
+Then edit the paths inside `firmarbiter.conf` to match your machine:
 
-    nano veritas.conf
+    nano firmarbiter.conf
 
 ## Setup
 
@@ -66,13 +66,13 @@ Create the Python environment:
 
 Then verify candidates:
 
-    ./python run_veritas.py --list-candidates
+    ./python run_firmarbiter.py --list-candidates
 
-## Running VERITAS
+## Running FIRMARBITER
 
 Example single-candidate run:
 
-    ./python run_veritas.py \
+    ./python run_firmarbiter.py \
       --firmware /path/to/firmware_folder \
       --candidate firmae \
       --timeout 900
@@ -93,9 +93,9 @@ These output folders are generated locally and are not committed to Git.
 
 ## Candidate tools
 
-VERITAS does not redistribute FirmAE, FIRMADYNE, EMBA, or firmware images.
+FIRMARBITER does not redistribute FirmAE, FIRMADYNE, EMBA, or firmware images.
 
-Candidate tools must be installed, cloned, or built separately according to their own licences and setup requirements. VERITAS provides adapters and configuration files for running and measuring them.
+Candidate tools must be installed, cloned, or built separately according to their own licences and setup requirements. FIRMARBITER provides adapters and configuration files for running and measuring them.
 
 ## Research note
 

@@ -8,15 +8,15 @@ import unittest
 import uuid
 from pathlib import Path
 
-from veritas_core.adapter_registry import discover_adapters
-from veritas_core.docker_backend import DockerBackend
-from veritas_core.docker_supervisor import (
+from firmarbiter_core.adapter_registry import discover_adapters
+from firmarbiter_core.docker_backend import DockerBackend
+from firmarbiter_core.docker_supervisor import (
     DockerAdapterSupervisor,
 )
-from veritas_core.probe_orchestrator import (
+from firmarbiter_core.probe_orchestrator import (
     IndependentProbeOrchestrator,
 )
-from veritas_core.probes.service_reachability import (
+from firmarbiter_core.probes.service_reachability import (
     probe_endpoint_event,
 )
 
@@ -82,7 +82,7 @@ def create_contract_root(
         },
         "firmware": {
             "case_id": "case-001",
-            "path": "/veritas/input/firmware",
+            "path": "/firmarbiter/input/firmware",
             "sha256": hashlib.sha256(
                 firmware_content
             ).hexdigest(),
@@ -107,10 +107,10 @@ def create_contract_root(
             "requirements": []
         },
         "paths": {
-            "workspace": "/veritas/work",
-            "artifacts": "/veritas/artifacts",
-            "events": "/veritas/events/events.jsonl",
-            "control": "/veritas/control"
+            "workspace": "/firmarbiter/work",
+            "artifacts": "/firmarbiter/artifacts",
+            "events": "/firmarbiter/events/events.jsonl",
+            "control": "/firmarbiter/control"
         },
         "integrity": {
             "adapter_manifest_sha256": manifest_sha256,

@@ -136,7 +136,7 @@ def main() -> int:
                 boot_directory
                 / "guest-console.log"
             ).write_text(
-                "Linux version 6.6.0-veritas-mock\n"
+                "Linux version 6.6.0-firmarbiter-mock\n"
                 "Kernel command line: console=ttyS0\n"
                 "Freeing unused kernel memory\n"
                 "Run /sbin/init as init process\n",
@@ -166,7 +166,7 @@ def main() -> int:
             busybox_path = unpack_root / "bin" / "busybox"
             busybox_path.write_bytes(
                 b"\\x7fELF"
-                b"VERITAS-MOCK-ROOTFS"
+                b"FIRMARBITER-MOCK-ROOTFS"
             )
             busybox_path.chmod(0o755)
 

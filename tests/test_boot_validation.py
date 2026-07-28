@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from veritas_core.probes.boot_validation import (
+from firmarbiter_core.probes.boot_validation import (
     validate_boot_evidence,
     write_boot_evidence,
 )

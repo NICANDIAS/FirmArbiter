@@ -4,7 +4,7 @@ set -euo pipefail
 
 FIRMAE_HOME="/opt/firmae"
 BINARY_DIR="$FIRMAE_HOME/binaries"
-PROVENANCE_DIR="/opt/veritas-adapter/provenance"
+PROVENANCE_DIR="/opt/firmarbiter-adapter/provenance"
 
 cd "$FIRMAE_HOME"
 

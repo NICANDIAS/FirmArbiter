@@ -7,12 +7,12 @@ import unittest
 import uuid
 from pathlib import Path
 
-from veritas_core.adapter_registry import discover_adapters
-from veritas_core.docker_backend import DockerBackend
-from veritas_core.docker_supervisor import (
+from firmarbiter_core.adapter_registry import discover_adapters
+from firmarbiter_core.docker_backend import DockerBackend
+from firmarbiter_core.docker_supervisor import (
     DockerAdapterSupervisor,
 )
-from veritas_core.environment_residue import (
+from firmarbiter_core.environment_residue import (
     ContainerRecord,
     DeviceMapperRecord,
     HostEnvironmentCollector,
@@ -23,7 +23,7 @@ from veritas_core.environment_residue import (
     evaluate_environment_residue,
     write_environment_evidence,
 )
-from veritas_core.lifecycle_watchdog import (
+from firmarbiter_core.lifecycle_watchdog import (
     LifecycleWatchdog,
 )
 
@@ -104,7 +104,7 @@ def create_contract_root(
         },
         "firmware": {
             "case_id": "case-001",
-            "path": "/veritas/input/firmware",
+            "path": "/firmarbiter/input/firmware",
             "sha256": hashlib.sha256(
                 firmware_content
             ).hexdigest(),
@@ -129,10 +129,10 @@ def create_contract_root(
             "requirements": []
         },
         "paths": {
-            "workspace": "/veritas/work",
-            "artifacts": "/veritas/artifacts",
-            "events": "/veritas/events/events.jsonl",
-            "control": "/veritas/control"
+            "workspace": "/firmarbiter/work",
+            "artifacts": "/firmarbiter/artifacts",
+            "events": "/firmarbiter/events/events.jsonl",
+            "control": "/firmarbiter/control"
         },
         "integrity": {
             "adapter_manifest_sha256": manifest_sha256,
@@ -186,7 +186,7 @@ class EnvironmentResidueUnitTests(unittest.TestCase):
             ),
             device_mapper_entries=(
                 DeviceMapperRecord(
-                    name="veritas-test-map",
+                    name="firmarbiter-test-map",
                     uuid=None,
                     major=253,
                     minor=9,

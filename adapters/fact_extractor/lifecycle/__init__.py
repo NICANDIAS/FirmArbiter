@@ -1,6 +1,6 @@
 # adapters/_template/lifecycle/__init__.py
 """
-Shared lifecycle primitives for VERITAS adapters. An adapter author should
+Shared lifecycle primitives for FIRMARBITER adapters. An adapter author should
 only ever need to import from here, not reach into individual files.
 """
 

@@ -5,7 +5,7 @@ import socketserver
 import threading
 import unittest
 
-from veritas_core.namespace_probe_worker import (
+from firmarbiter_core.namespace_probe_worker import (
     capture_http,
     probe_reachability,
 )
@@ -13,7 +13,7 @@ from veritas_core.namespace_probe_worker import (
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        body = b"veritas-probe-test"
+        body = b"firmarbiter-probe-test"
         self.send_response(200)
         self.send_header(
             "Content-Type",

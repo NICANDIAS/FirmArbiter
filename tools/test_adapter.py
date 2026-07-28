@@ -10,7 +10,7 @@ runs the adapter's Docker image against it, and validates the resulting
 event stream against the schema. Does NOT require real firmware, real
 booting, or the full coordinator — this is the fast local check an
 author runs while developing a new adapter, before ever running
-run_veritas.py for real.
+run_firmarbiter.py for real.
 
 Checks performed:
   1. adapter.yaml exists and is valid YAML with required fields
@@ -59,11 +59,11 @@ def load_adapter_manifest(adapter_dir):
 # since the entrypoint reads paths from request.json and uses them as-is
 # INSIDE the container — host paths are meaningless there. The harness
 # mounts host tmp dirs to exactly these container paths.
-CONTAINER_FIRMWARE_PATH = "/veritas/input/firmware.bin"
-CONTAINER_EVENTS_PATH = "/veritas/events/events.jsonl"
-CONTAINER_ARTIFACTS_DIR = "/veritas/artifacts"
-CONTAINER_CONTROL_DIR = "/veritas/control"
-CONTAINER_WORKSPACE_DIR = "/veritas/work"
+CONTAINER_FIRMWARE_PATH = "/firmarbiter/input/firmware.bin"
+CONTAINER_EVENTS_PATH = "/firmarbiter/events/events.jsonl"
+CONTAINER_ARTIFACTS_DIR = "/firmarbiter/artifacts"
+CONTAINER_CONTROL_DIR = "/firmarbiter/control"
+CONTAINER_WORKSPACE_DIR = "/firmarbiter/work"
 
 
 def build_synthetic_request(work_dir, adapter_id):
@@ -130,7 +130,7 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
     if not check("adapter.yaml has 'id' field", bool(adapter_id)):
         return False
 
-    image_name = f"veritas-adapter-{adapter_id}-smoketest"
+    image_name = f"firmarbiter-adapter-{adapter_id}-smoketest"
 
     # Use a manually-managed temp dir instead of TemporaryDirectory's
     # context manager. Adapters that launch privileged/root sibling
@@ -145,7 +145,7 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
     # force-removing via a plain shell command instead, which does not
     # require ownership of individual files — only write+execute on
     # their parent directory. Discovered onboarding fact_extractor.
-    tmp = tempfile.mkdtemp(prefix="veritas_smoketest_")
+    tmp = tempfile.mkdtemp(prefix="firmarbiter_smoketest_")
     try:
         work_dir = Path(tmp)
         request_path, events_path, firmware_path = build_synthetic_request(work_dir, adapter_id)
@@ -165,9 +165,9 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
         run_result = subprocess.run(
             [
                 "docker", "run", "--rm",
-                "-v", f"{request_path}:/veritas/input/request.json:ro",
+                "-v", f"{request_path}:/firmarbiter/input/request.json:ro",
                 "-v", f"{firmware_path}:{CONTAINER_FIRMWARE_PATH}:ro",
-                "-v", f"{SCHEMA_PATH}:/veritas/schemas/adapter-event-v1.schema.json:ro",
+                "-v", f"{SCHEMA_PATH}:/firmarbiter/schemas/adapter-event-v1.schema.json:ro",
                 "-v", f"{work_dir}/artifacts:{CONTAINER_ARTIFACTS_DIR}",
                 "-v", f"{work_dir}/control:{CONTAINER_CONTROL_DIR}",
                 "-v", f"{work_dir}/workspace:{CONTAINER_WORKSPACE_DIR}",
@@ -219,7 +219,7 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="VERITAS adapter smoke test harness")
+    parser = argparse.ArgumentParser(description="FIRMARBITER adapter smoke test harness")
     parser.add_argument("adapter_dir", help="Path to the adapter directory, e.g. adapters/emba")
     parser.add_argument("--timeout", type=int, default=120, help="Container run timeout in seconds")
     args = parser.parse_args()

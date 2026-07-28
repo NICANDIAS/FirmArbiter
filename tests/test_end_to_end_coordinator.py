@@ -7,13 +7,13 @@ import unittest
 import uuid
 from pathlib import Path
 
-from veritas_core.adapter_registry import (
+from firmarbiter_core.adapter_registry import (
     discover_adapters,
 )
-from veritas_core.docker_backend import (
+from firmarbiter_core.docker_backend import (
     DockerBackend,
 )
-from veritas_core.run_coordinator import (
+from firmarbiter_core.run_coordinator import (
     CandidateRunCoordinator,
     RunCoordinatorError,
     RunPolicy,

@@ -2,7 +2,7 @@ schema_version: '1.0'
 adapter:
   id: firmadyne
   display_name: FIRMADYNE Adapter
-  description: VERITAS adapter for a pinned FIRMADYNE source revision
+  description: FIRMARBITER adapter for a pinned FIRMADYNE source revision
   version: 0.1.1
   contract_version: '1.0'
 candidate:

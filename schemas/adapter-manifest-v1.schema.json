@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://veritas.example/schemas/adapter-manifest-v1.schema.json",
-  "title": "VERITAS Adapter Manifest v1",
+  "$id": "https://firmarbiter.example/schemas/adapter-manifest-v1.schema.json",
+  "title": "FIRMARBITER Adapter Manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

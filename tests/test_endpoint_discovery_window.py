@@ -13,7 +13,7 @@ from adapters.firmae.entrypoint import (
     discover_candidate_endpoints,
     wait_for_candidate_network_readiness,
 )
-from run_veritas import summarise_result
+from run_firmarbiter import summarise_result
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -348,7 +348,7 @@ class EndpointDiscoveryWindowTests(unittest.TestCase):
             },
             "firmware": {
                 "case_id": "case-001",
-                "path": "/veritas/input/firmware",
+                "path": "/firmarbiter/input/firmware",
                 "sha256": "a" * 64,
                 "size_bytes": 1,
                 "delivery_semantics": "opaque-original-bytes",
@@ -373,10 +373,10 @@ class EndpointDiscoveryWindowTests(unittest.TestCase):
                 "requirements": [],
             },
             "paths": {
-                "workspace": "/veritas/work",
-                "artifacts": "/veritas/artifacts",
-                "events": "/veritas/events/events.jsonl",
-                "control": "/veritas/control",
+                "workspace": "/firmarbiter/work",
+                "artifacts": "/firmarbiter/artifacts",
+                "events": "/firmarbiter/events/events.jsonl",
+                "control": "/firmarbiter/control",
             },
             "integrity": {
                 "adapter_manifest_sha256": "b" * 64,

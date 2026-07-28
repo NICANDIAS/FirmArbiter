@@ -38,7 +38,7 @@ cleanup() {
     chown -R \
         "$HOST_UID:$HOST_GID" \
         /opt/firmae/scratch \
-        /veritas/evidence \
+        /firmarbiter/evidence \
         >/dev/null 2>&1 || true
 }
 
@@ -68,7 +68,7 @@ python3 -u \
     -q \
     -o \
     -a "$ARCH" \
-    > /veritas/evidence/makeNetwork.log \
+    > /firmarbiter/evidence/makeNetwork.log \
     2>&1
 
 END_TIME="$(date -u +%s.%N)"
@@ -76,7 +76,7 @@ END_TIME="$(date -u +%s.%N)"
 python3 - \
     "$START_TIME" \
     "$END_TIME" \
-    > /veritas/evidence/network-duration.json <<'PY'
+    > /firmarbiter/evidence/network-duration.json <<'PY'
 import json
 import sys
 
@@ -94,7 +94,7 @@ if [ -s "$WORK_DIR/run.sh" ]
 then
     cp \
         "$WORK_DIR/run.sh" \
-        /veritas/evidence/generated-run.sh
+        /firmarbiter/evidence/generated-run.sh
 fi
 
 for filename in \
@@ -115,7 +115,7 @@ do
     then
         cp \
             "$WORK_DIR/$filename" \
-            "/veritas/evidence/$filename"
+            "/firmarbiter/evidence/$filename"
     fi
 done
 
@@ -125,7 +125,7 @@ do
     then
         cp \
             "$candidate" \
-            "/veritas/evidence/$(basename "$candidate")"
+            "/firmarbiter/evidence/$(basename "$candidate")"
     fi
 done
 
@@ -133,16 +133,16 @@ find "$WORK_DIR" \
     -maxdepth 1 \
     -printf '%y\t%s\t%f\n' |
 sort \
-    > /veritas/evidence/work-files.txt
+    > /firmarbiter/evidence/work-files.txt
 
 qemu-img info \
     --output=json \
     "$IMAGE_PATH" \
-    > /veritas/evidence/image-after-info.json
+    > /firmarbiter/evidence/image-after-info.json
 
 sha256sum "$IMAGE_PATH" |
 sed 's#  .*/image.raw#  image.raw#' \
-    > /veritas/evidence/image-after.sha256
+    > /firmarbiter/evidence/image-after.sha256
 
 echo
 echo "Network inference command completed"

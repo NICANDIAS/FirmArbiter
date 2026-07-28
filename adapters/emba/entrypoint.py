@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # adapters/_template/entrypoint.py
 """
-VERITAS Adapter Template — entrypoint.py
+FIRMARBITER Adapter Template — entrypoint.py
 
 HOW TO USE THIS TEMPLATE:
   Copy this whole adapters/_template/ directory to adapters/<your_tool>/,
@@ -34,8 +34,8 @@ from lifecycle import (
     ShutdownCoordinator,
 )
 
-SCHEMA_PATH = "/veritas/schemas/adapter-event-v1.schema.json"
-REQUEST_PATH = "/veritas/input/request.json"
+SCHEMA_PATH = "/firmarbiter/schemas/adapter-event-v1.schema.json"
+REQUEST_PATH = "/firmarbiter/input/request.json"
 
 
 # ---------------------------------------------------------------------
@@ -47,7 +47,7 @@ REQUEST_PATH = "/veritas/input/request.json"
 
 def run_unpack(request, event_writer):
     """Extract the firmware. Must leave the rootfs at
-    <artifacts_path>/unpack/rootfs/ — VERITAS measures unpack success by
+    <artifacts_path>/unpack/rootfs/ — FIRMARBITER measures unpack success by
     inspecting that path directly, not by trusting this return value."""
     raise NotImplementedError("Fill in run_unpack for your tool")
 
@@ -60,7 +60,7 @@ def run_emulate(request, event_writer):
 
 def run_endpoint_discovery(request, event_writer):
     """Report any endpoints your tool's own instrumentation finds.
-    Note: VERITAS's neutral probe independently verifies reachability —
+    Note: FIRMARBITER's neutral probe independently verifies reachability —
     this stage is about your tool's *claims*, not the verified result.
     Return ('not_applicable', '...') if not relevant to your tool."""
     raise NotImplementedError("Fill in run_endpoint_discovery for your tool")

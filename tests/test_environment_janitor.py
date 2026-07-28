@@ -7,16 +7,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from veritas_core.adapter_registry import discover_adapters
-from veritas_core.docker_backend import (
+from firmarbiter_core.adapter_registry import discover_adapters
+from firmarbiter_core.docker_backend import (
     DockerBackend,
     DockerBackendError,
 )
-from veritas_core.environment_janitor import (
+from firmarbiter_core.environment_janitor import (
     EnvironmentJanitor,
     build_remediation_plan,
 )
-from veritas_core.environment_residue import (
+from firmarbiter_core.environment_residue import (
     ContainerRecord,
     HostEnvironmentSnapshot,
     LoopDeviceRecord,
@@ -101,8 +101,8 @@ class EnvironmentJanitorUnitTests(unittest.TestCase):
             image="example:test",
             state="exited",
             labels={
-                "veritas.managed": "true",
-                "veritas.run_id": run_id,
+                "firmarbiter.managed": "true",
+                "firmarbiter.run_id": run_id,
             },
         )
 
@@ -112,8 +112,8 @@ class EnvironmentJanitorUnitTests(unittest.TestCase):
             image="example:test",
             state="running",
             labels={
-                "veritas.managed": "true",
-                "veritas.run_id": "another-run",
+                "firmarbiter.managed": "true",
+                "firmarbiter.run_id": "another-run",
             },
         )
 
@@ -213,8 +213,8 @@ class EnvironmentJanitorUnitTests(unittest.TestCase):
             image="example:test",
             state="exited",
             labels={
-                "veritas.managed": "true",
-                "veritas.run_id": run_id,
+                "firmarbiter.managed": "true",
+                "firmarbiter.run_id": run_id,
             },
         )
 
@@ -235,8 +235,8 @@ class EnvironmentJanitorUnitTests(unittest.TestCase):
                     "Id": container_id,
                     "Config": {
                         "Labels": {
-                            "veritas.managed": "true",
-                            "veritas.run_id": "different-run",
+                            "firmarbiter.managed": "true",
+                            "firmarbiter.run_id": "different-run",
                         }
                     },
                 }
@@ -296,12 +296,12 @@ class EnvironmentJanitorDockerTests(unittest.TestCase):
         )
 
         owned_name = (
-            "veritas-owned-"
+            "firmarbiter-owned-"
             + uuid.uuid4().hex[:10]
         )
 
         unowned_name = (
-            "veritas-unowned-"
+            "firmarbiter-unowned-"
             + uuid.uuid4().hex[:10]
         )
 
@@ -317,11 +317,11 @@ class EnvironmentJanitorDockerTests(unittest.TestCase):
                     "--name",
                     owned_name,
                     "--label",
-                    "veritas.managed=true",
+                    "firmarbiter.managed=true",
                     "--label",
-                    f"veritas.run_id={run_id}",
+                    f"firmarbiter.run_id={run_id}",
                     self.image.reference,
-                    "/veritas/input/request.json",
+                    "/firmarbiter/input/request.json",
                 ],
                 text=True,
                 stdout=subprocess.PIPE,
@@ -339,7 +339,7 @@ class EnvironmentJanitorDockerTests(unittest.TestCase):
                     "--name",
                     unowned_name,
                     self.image.reference,
-                    "/veritas/input/request.json",
+                    "/firmarbiter/input/request.json",
                 ],
                 text=True,
                 stdout=subprocess.PIPE,

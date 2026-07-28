@@ -1,7 +1,7 @@
 """
 docker_runner.py
 ----------------
-Handles all Docker operations for VERITAS.
+Handles all Docker operations for FIRMARBITER.
 
 Supports two tool source modes, set when the tool is registered:
 
@@ -14,11 +14,11 @@ Supports two tool source modes, set when the tool is registered:
                offline environments, or when you want to test a locally
                modified version of the tool.
 
-VERITAS selects the correct mode automatically based on how the tool
+FIRMARBITER selects the correct mode automatically based on how the tool
 was registered. You do not configure this manually.
 
 The firmware folder is mounted read-only into every container so tools
-can read images but cannot modify the corpus. VERITAS's probes run on
+can read images but cannot modify the corpus. FIRMARBITER's probes run on
 the host and observe containers from the outside.
 """
 
@@ -32,8 +32,8 @@ from pathlib import Path
 
 
 CONTAINER_FIRMWARE_DIR  = "/firmware"
-CONTAINER_OUTPUT_DIR    = "/veritas_output"
-IMAGE_PREFIX            = "veritas"
+CONTAINER_OUTPUT_DIR    = "/firmarbiter_output"
+IMAGE_PREFIX            = "firmarbiter"
 CONTAINER_START_TIMEOUT = 30
 
 
@@ -85,7 +85,7 @@ class DockerRunner:
         """
         Return the resolved local tool path, or None if it cannot be found.
         Checks both the path stored in candidate.conf and a .local_path file
-        written by veritas_register.py at registration time.
+        written by firmarbiter_register.py at registration time.
         """
         # First check candidate.conf
         if self.tool_local_path and Path(self.tool_local_path).is_dir():
@@ -117,17 +117,17 @@ class DockerRunner:
             local_path = self._resolve_local_path()
             if local_path is None:
                 print(
-                    f"[VERITAS][docker] ERROR: Local tool path not found for "
+                    f"[FIRMARBITER][docker] ERROR: Local tool path not found for "
                     f"{self.candidate_id}.\n"
-                    f"[VERITAS][docker] Re-register with:\n"
-                    f"[VERITAS][docker]   python run_veritas.py "
+                    f"[FIRMARBITER][docker] Re-register with:\n"
+                    f"[FIRMARBITER][docker]   python run_firmarbiter.py "
                     f"--register-tool /path/to/tool",
                     file=sys.stderr,
                 )
                 return None, {}
 
-            print(f"[VERITAS][docker] Source mode : local")
-            print(f"[VERITAS][docker] Local path  : {local_path}")
+            print(f"[FIRMARBITER][docker] Source mode : local")
+            print(f"[FIRMARBITER][docker] Local path  : {local_path}")
             # Pass local path as a build arg — compatible with legacy builder.
             # The Dockerfile uses TOOL_LOCAL_PATH to locate the tool.
             extra_args = [
@@ -141,14 +141,14 @@ class DockerRunner:
             repo = self.tool_repo
             if not repo:
                 print(
-                    f"[VERITAS][docker] ERROR: No tool_repo set in candidate.conf "
+                    f"[FIRMARBITER][docker] ERROR: No tool_repo set in candidate.conf "
                     f"for {self.candidate_id} (required for git mode).",
                     file=sys.stderr,
                 )
                 return None, {}
 
-            print(f"[VERITAS][docker] Source mode : git")
-            print(f"[VERITAS][docker] Repo        : {repo}")
+            print(f"[FIRMARBITER][docker] Source mode : git")
+            print(f"[FIRMARBITER][docker] Repo        : {repo}")
             extra_args = [
                 "--build-arg", "TOOL_SOURCE=git",
                 "--build-arg", f"TOOL_REPO={repo}",
@@ -194,8 +194,8 @@ class DockerRunner:
         """
         if not self.dockerfile.exists():
             print(
-                f"[VERITAS][docker] ERROR: No Dockerfile at {self.dockerfile}.\n"
-                f"[VERITAS][docker] Run --register-tool to create it.",
+                f"[FIRMARBITER][docker] ERROR: No Dockerfile at {self.dockerfile}.\n"
+                f"[FIRMARBITER][docker] Run --register-tool to create it.",
                 file=sys.stderr,
             )
             return False
@@ -204,15 +204,15 @@ class DockerRunner:
         if extra_args is None:
             return False
 
-        print(f"\n[VERITAS][docker] Building image: {self.image_name}")
+        print(f"\n[FIRMARBITER][docker] Building image: {self.image_name}")
         if self.tool_source == "git":
-            print(f"[VERITAS][docker] This clones the tool from its repo and "
+            print(f"[FIRMARBITER][docker] This clones the tool from its repo and "
                   f"installs dependencies.")
-            print(f"[VERITAS][docker] Build timeout : {build_timeout}s total, "
+            print(f"[FIRMARBITER][docker] Build timeout : {build_timeout}s total, "
                   f"{stall_timeout}s max without output.")
-            print(f"[VERITAS][docker] Subsequent runs use the cached image.")
+            print(f"[FIRMARBITER][docker] Subsequent runs use the cached image.")
         else:
-            print(f"[VERITAS][docker] Copying tool from local folder into image.")
+            print(f"[FIRMARBITER][docker] Copying tool from local folder into image.")
 
         cmd = (
             ["docker", "build"]
@@ -248,7 +248,7 @@ class DockerRunner:
                 elapsed = time.time() - build_start
                 if elapsed >= build_timeout:
                     print(
-                        f"\n[VERITAS][docker] Build timeout ({build_timeout}s) "
+                        f"\n[FIRMARBITER][docker] Build timeout ({build_timeout}s) "
                         f"reached for {self.candidate_id}. Killing.",
                         file=sys.stderr,
                     )
@@ -260,13 +260,13 @@ class DockerRunner:
                 stall = time.time() - last_output_time
                 if stall >= stall_timeout:
                     print(
-                        f"\n[VERITAS][docker] Build stalled — no output for "
+                        f"\n[FIRMARBITER][docker] Build stalled — no output for "
                         f"{stall_timeout}s. This usually means the network is "
                         f"blocked (e.g. college/university firewall). Killing.",
                         file=sys.stderr,
                     )
                     print(
-                        f"[VERITAS][docker] Tip: run on a personal hotspot to "
+                        f"[FIRMARBITER][docker] Tip: run on a personal hotspot to "
                         f"build the image, then return to any network for runs.",
                         file=sys.stderr,
                     )
@@ -290,7 +290,7 @@ class DockerRunner:
                     if any(kw in stripped.lower() for kw in
                            ["step", "cloning", "installing", "copying",
                             "error", "warning", "fatal", "failed"]):
-                        print(f"[VERITAS][docker]   {stripped}")
+                        print(f"[FIRMARBITER][docker]   {stripped}")
                 else:
                     # No output in the last 2s — check if process ended
                     if proc.poll() is not None:
@@ -299,7 +299,7 @@ class DockerRunner:
                     stall_so_far = int(time.time() - last_output_time)
                     if stall_so_far > 0 and stall_so_far % 30 == 0:
                         remaining = stall_timeout - stall_so_far
-                        print(f"[VERITAS][docker]   ... waiting "
+                        print(f"[FIRMARBITER][docker]   ... waiting "
                               f"({stall_so_far}s without output, "
                               f"will abort in {remaining}s if nothing happens)")
 
@@ -308,7 +308,7 @@ class DockerRunner:
                 success = proc.returncode == 0
 
         except Exception as exc:
-            print(f"[VERITAS][docker] ERROR during build: {exc}", file=sys.stderr)
+            print(f"[FIRMARBITER][docker] ERROR during build: {exc}", file=sys.stderr)
             try:
                 proc.kill()
             except Exception:
@@ -318,20 +318,20 @@ class DockerRunner:
                 log_fh.close()
 
         if success:
-            print(f"[VERITAS][docker] Image built successfully: {self.image_name}")
+            print(f"[FIRMARBITER][docker] Image built successfully: {self.image_name}")
         elif killed:
             print(
-                f"[VERITAS][docker] Build killed due to timeout for "
+                f"[FIRMARBITER][docker] Build killed due to timeout for "
                 f"{self.candidate_id}. Skipping this tool for now.",
                 file=sys.stderr,
             )
         else:
             print(
-                f"[VERITAS][docker] ERROR: Build failed for {self.candidate_id}.",
+                f"[FIRMARBITER][docker] ERROR: Build failed for {self.candidate_id}.",
                 file=sys.stderr,
             )
             if log_path:
-                print(f"[VERITAS][docker] Build log: {log_path}", file=sys.stderr)
+                print(f"[FIRMARBITER][docker] Build log: {log_path}", file=sys.stderr)
 
         return success
 
@@ -347,19 +347,19 @@ class DockerRunner:
 
     def rebuild_image(self, build_log_path: str | None = None) -> bool:
         """Force a full rebuild, pulling the latest tool version."""
-        print(f"[VERITAS][docker] Rebuilding {self.candidate_id} from scratch...")
+        print(f"[FIRMARBITER][docker] Rebuilding {self.candidate_id} from scratch...")
         return self.build_image(log_path=build_log_path, no_cache=True)
 
     def get_image_commit(self) -> str:
         """
         Return the tool's git commit hash baked into the image.
-        This is read from the .veritas_commit file written during the build.
+        This is read from the .firmarbiter_commit file written during the build.
         Returns 'unknown' if not available (e.g. local copy without git).
         """
         try:
             result = subprocess.run(
                 ["docker", "run", "--rm", self.image_name,
-                 "cat", f"/opt/{self.candidate_id}/.veritas_commit"],
+                 "cat", f"/opt/{self.candidate_id}/.firmarbiter_commit"],
                 capture_output=True, text=True, timeout=15,
             )
             commit = result.stdout.strip()
@@ -402,9 +402,9 @@ class DockerRunner:
         ] + loop_flags + [
             "--volume", f"{firmware_dir}:{CONTAINER_FIRMWARE_DIR}:ro",
             "--volume", f"{output_dir}:{CONTAINER_OUTPUT_DIR}:rw",
-            "--env", f"VERITAS_FIRMWARE={CONTAINER_FIRMWARE_DIR}/{firmware_file}",
-            "--env", f"VERITAS_ARCH={architecture}",
-            "--env", f"VERITAS_OUTPUT={CONTAINER_OUTPUT_DIR}",
+            "--env", f"FIRMARBITER_FIRMWARE={CONTAINER_FIRMWARE_DIR}/{firmware_file}",
+            "--env", f"FIRMARBITER_ARCH={architecture}",
+            "--env", f"FIRMARBITER_OUTPUT={CONTAINER_OUTPUT_DIR}",
             self.image_name,
             f"{CONTAINER_FIRMWARE_DIR}/{firmware_file}",
             architecture,
@@ -418,13 +418,13 @@ class DockerRunner:
             if result.returncode == 0:
                 return result.stdout.strip()
             print(
-                f"[VERITAS][docker] ERROR starting container: {result.stderr}",
+                f"[FIRMARBITER][docker] ERROR starting container: {result.stderr}",
                 file=sys.stderr,
             )
             return None
         except subprocess.TimeoutExpired:
             print(
-                f"[VERITAS][docker] ERROR: Container did not start within "
+                f"[FIRMARBITER][docker] ERROR: Container did not start within "
                 f"{CONTAINER_START_TIMEOUT}s",
                 file=sys.stderr,
             )

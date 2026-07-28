@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Aggregate Adapter Contract v1 VERITAS results.
+Aggregate Adapter Contract v1 FIRMARBITER results.
 
 The aggregator reads immutable ``final-result.json`` files, selects one
 experiment, resolves repeated attempts deterministically, and writes CSV
@@ -823,7 +823,7 @@ def print_summary(summaries: list[dict[str, Any]]) -> None:
         ("non_completed_runs", "NonComp", 8),
     ]
 
-    print("\n── VERITAS Adapter Contract v1 Summary ─────────────────────────")
+    print("\n── FIRMARBITER Adapter Contract v1 Summary ─────────────────────────")
     print(
         "  ".join(
             label.ljust(width)
@@ -858,7 +858,7 @@ def print_summary(summaries: list[dict[str, Any]]) -> None:
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Aggregate one Adapter Contract v1 VERITAS experiment"
+            "Aggregate one Adapter Contract v1 FIRMARBITER experiment"
         )
     )
     parser.add_argument(
@@ -904,7 +904,7 @@ def main() -> int:
         inventory = experiment_inventory(results)
 
         if args.list_experiments:
-            print("Available VERITAS experiments:\n")
+            print("Available FIRMARBITER experiments:\n")
 
             for item in inventory:
                 print(f"  {item['experiment_id']}")
@@ -937,7 +937,7 @@ def main() -> int:
         )
 
     except AggregationError as exc:
-        print(f"VERITAS aggregation error: {exc}", file=sys.stderr)
+        print(f"FIRMARBITER aggregation error: {exc}", file=sys.stderr)
         return 2
 
     rows = [flatten_result(result) for result in selected]

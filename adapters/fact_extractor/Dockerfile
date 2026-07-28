@@ -9,8 +9,8 @@ RUN apt-get update && \
 
 RUN pip install --no-cache-dir jsonschema
 
-WORKDIR /veritas_adapter
+WORKDIR /firmarbiter_adapter
 COPY lifecycle/ ./lifecycle/
 COPY entrypoint.py ./entrypoint.py
 
-ENTRYPOINT ["python3", "/veritas_adapter/entrypoint.py"]
+ENTRYPOINT ["python3", "/firmarbiter_adapter/entrypoint.py"]

@@ -21,17 +21,17 @@ def utc_now() -> str:
 
 def map_contract_path(contract_path: str) -> Path:
     """
-    Map /veritas paths into a temporary host directory for tests.
+    Map /firmarbiter paths into a temporary host directory for tests.
 
-    Real container adapters will use the /veritas paths directly.
+    Real container adapters will use the /firmarbiter paths directly.
     """
-    root_value = os.environ.get("VERITAS_CONTRACT_ROOT")
+    root_value = os.environ.get("FIRMARBITER_CONTRACT_ROOT")
 
     if not root_value:
         return Path(contract_path)
 
     relative = PurePosixPath(contract_path).relative_to(
-        "/veritas"
+        "/firmarbiter"
     )
 
     return Path(root_value) / Path(*relative.parts)

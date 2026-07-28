@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:veritas:schema:adapter-event:1.0",
-  "title": "VERITAS Adapter Event v1",
+  "$id": "urn:firmarbiter:schema:adapter-event:1.0",
+  "title": "FIRMARBITER Adapter Event v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

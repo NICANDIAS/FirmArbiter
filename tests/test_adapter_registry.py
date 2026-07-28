@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from veritas_core.adapter_registry import (
+from firmarbiter_core.adapter_registry import (
     AdapterRegistryError,
     discover_adapters,
 )

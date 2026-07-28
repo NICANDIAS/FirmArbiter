@@ -24,41 +24,41 @@ SCHEMA_VERSION = "1.0"
 CONTRACT_VERSION = "1.0"
 
 DATABASE_CONTROLLER = Path(
-    "/usr/local/bin/veritas-firmae-database"
+    "/usr/local/bin/firmarbiter-firmae-database"
 )
 
 DEPENDENCY_DOCTOR = Path(
-    "/usr/local/bin/veritas-firmae-dependency-doctor"
+    "/usr/local/bin/firmarbiter-firmae-dependency-doctor"
 )
 
 FIRMAE_DATABASE_PORT = os.environ.get(
-    "VERITAS_FIRMAE_PGPORT",
+    "FIRMARBITER_FIRMAE_PGPORT",
     "55432",
 )
 
 # FirmAE helper scripts invoke psql directly. Export the private
 # database connection so every child process uses the same isolated
 # PostgreSQL endpoint instead of the host PostgreSQL on port 5432.
-os.environ["VERITAS_FIRMAE_PGPORT"] = (
+os.environ["FIRMARBITER_FIRMAE_PGPORT"] = (
     FIRMAE_DATABASE_PORT
 )
 os.environ["PGHOST"] = "127.0.0.1"
 os.environ["PGPORT"] = FIRMAE_DATABASE_PORT
 
 PREPARE_IMAGE_HELPER = Path(
-    "/usr/local/bin/veritas-firmae-prepare-image"
+    "/usr/local/bin/firmarbiter-firmae-prepare-image"
 )
 INFER_NETWORK_HELPER = Path(
-    "/usr/local/bin/veritas-firmae-infer-network"
+    "/usr/local/bin/firmarbiter-firmae-infer-network"
 )
 PERSISTENT_RUNTIME_HELPER = Path(
-    "/usr/local/bin/veritas-firmae-run-persistent"
+    "/usr/local/bin/firmarbiter-firmae-run-persistent"
 )
 
 FIRMAE_HOME = Path("/opt/firmae")
 FIRMAE_IMAGES = FIRMAE_HOME / "images"
 FIRMAE_SCRATCH = FIRMAE_HOME / "scratch"
-RUNTIME_EVIDENCE_ALIAS = Path("/veritas/evidence")
+RUNTIME_EVIDENCE_ALIAS = Path("/firmarbiter/evidence")
 
 FULL_EXECUTION_STAGES = {
     "unpack",
@@ -118,11 +118,11 @@ def utc_now() -> str:
 
 def map_contract_path(contract_path: str) -> Path:
     """
-    Use /veritas paths directly in containers.
+    Use /firmarbiter paths directly in containers.
 
-    VERITAS_CONTRACT_ROOT supports host-side contract tests.
+    FIRMARBITER_CONTRACT_ROOT supports host-side contract tests.
     """
-    contract_root = os.environ.get("VERITAS_CONTRACT_ROOT")
+    contract_root = os.environ.get("FIRMARBITER_CONTRACT_ROOT")
 
     if not contract_root:
         return Path(contract_path)
@@ -130,10 +130,10 @@ def map_contract_path(contract_path: str) -> Path:
     path = PurePosixPath(contract_path)
 
     try:
-        relative = path.relative_to("/veritas")
+        relative = path.relative_to("/firmarbiter")
     except ValueError as exc:
         raise ContractError(
-            f"Contract path is outside /veritas: {contract_path}"
+            f"Contract path is outside /firmarbiter: {contract_path}"
         ) from exc
 
     return Path(contract_root).joinpath(*relative.parts)
@@ -263,10 +263,10 @@ def load_and_validate_request(
         )
 
     expected_paths = {
-        "workspace": "/veritas/work",
-        "artifacts": "/veritas/artifacts",
-        "events": "/veritas/events/events.jsonl",
-        "control": "/veritas/control",
+        "workspace": "/firmarbiter/work",
+        "artifacts": "/firmarbiter/artifacts",
+        "events": "/firmarbiter/events/events.jsonl",
+        "control": "/firmarbiter/control",
     }
 
     for name, expected in expected_paths.items():
@@ -280,10 +280,10 @@ def load_and_validate_request(
 
     firmware_contract_path = firmware.get("path")
 
-    if firmware_contract_path != "/veritas/input/firmware":
+    if firmware_contract_path != "/firmarbiter/input/firmware":
         raise ContractError(
             "firmware.path must be "
-            "'/veritas/input/firmware'"
+            "'/firmarbiter/input/firmware'"
         )
 
     firmware_path = map_contract_path(
@@ -557,7 +557,7 @@ def run_dependency_doctor(
         (
             "FirmAE runtime dependency validation failed"
             + (f" ({detail})" if detail else "")
-            + "; inspect /veritas/artifacts/dependency-check.json"
+            + "; inspect /firmarbiter/artifacts/dependency-check.json"
         ),
     )
 
@@ -887,13 +887,13 @@ def prepare_runtime_layout(
     workspace_path: Path,
     artifacts_path: Path,
 ) -> tuple[Path, Path]:
-    if os.environ.get("VERITAS_CONTRACT_ROOT"):
+    if os.environ.get("FIRMARBITER_CONTRACT_ROOT"):
         raise AdapterOperationalError(
             "FIRMAE_EMULATION_REQUIRES_CONTAINER",
             "candidate_setup",
             (
                 "FirmAE emulation cannot run through the "
-                "host-side VERITAS_CONTRACT_ROOT test mapping"
+                "host-side FIRMARBITER_CONTRACT_ROOT test mapping"
             ),
         )
 
@@ -1631,7 +1631,7 @@ def wait_for_candidate_network_readiness(
     ICMP or a supported TCP endpoint is a FirmAE network-readiness
     signal. A timeout is a valid candidate outcome: the persistent
     runtime remained alive, but no network-readiness claim appeared.
-    Independent VERITAS boot validation uses guest-level evidence and
+    Independent FIRMARBITER boot validation uses guest-level evidence and
     therefore remains separate from this observation.
     """
     if timeout_seconds <= 0:
@@ -2075,7 +2075,7 @@ def dispatch_candidate(
     )
 
     command = [
-        "/usr/local/bin/veritas-firmae-unpack",
+        "/usr/local/bin/firmarbiter-firmae-unpack",
         "--firmware",
         str(firmware_path),
         "--artifacts",
@@ -2157,7 +2157,7 @@ def dispatch_candidate(
         stage_outcome="succeeded",
         message=(
             "FirmAE produced a root filesystem export for "
-            "independent VERITAS validation"
+            "independent FIRMARBITER validation"
         ),
     )
 
@@ -2335,7 +2335,7 @@ def dispatch_candidate(
                 f"full {boot_timeout:.0f}-second network-readiness "
                 "observation window, but produced no ICMP or "
                 "supported TCP readiness signal; independent "
-                "VERITAS boot validation will use guest-level "
+                "FIRMARBITER boot validation will use guest-level "
                 "evidence"
             )
 
@@ -2590,7 +2590,7 @@ def main() -> int:
                         "phase": "candidate_execution",
                         "message": (
                             "FirmAE persistent runtime "
-                            "exited before VERITAS "
+                            "exited before FIRMARBITER "
                             f"requested shutdown: "
                             f"return code {return_code}"
                         ),

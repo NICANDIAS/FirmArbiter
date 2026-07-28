@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from veritas_core.probes.unpack_validation import (
+from firmarbiter_core.probes.unpack_validation import (
     validate_unpack_export,
     write_unpack_evidence,
 )

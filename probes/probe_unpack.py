@@ -4,11 +4,11 @@ probe_unpack.py
 Runs an independent extraction attempt on each firmware image before
 any candidate tool touches it.
 
-This gives VERITAS a ground truth about what is actually inside the
+This gives FIRMARBITER a ground truth about what is actually inside the
 image, independent of what any tool claims to have extracted. If a
-tool says it failed to unpack but VERITAS's own extraction found a
+tool says it failed to unpack but FIRMARBITER's own extraction found a
 root filesystem, that is a meaningful finding about the tool's
-extraction capability. If neither VERITAS nor the tool could extract
+extraction capability. If neither FIRMARBITER nor the tool could extract
 anything, the failure is in the image itself.
 
 We use Binwalk for extraction because it is the de facto standard for
@@ -20,7 +20,7 @@ image has already been unpacked (from a previous run), we skip the
 extraction and use the cached result. This avoids re-unpacking the
 same image for every tool comparison.
 
-Usage (called from run_veritas.py before any tool runs):
+Usage (called from run_firmarbiter.py before any tool runs):
 
     from probes.probe_unpack import probe_unpack
     result = probe_unpack(
@@ -84,7 +84,7 @@ def _run_binwalk_extract(firmware_path: str, output_dir: str) -> tuple:
     Tries multiple invocation styles because binwalk versions differ:
     - binwalk 2.x uses --directory and --run-as
     - binwalk 3.x changed some flags
-    Both are tried so VERITAS works regardless of which version is installed.
+    Both are tried so FIRMARBITER works regardless of which version is installed.
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -295,12 +295,12 @@ def probe_unpack(
     dict
         A dict matching the 'unpack' block in result_schema.json,
         minus the tool_claimed_unpack field (that is filled in by
-        run_veritas.py after the tool runs).
+        run_firmarbiter.py after the tool runs).
     """
     result = {
-        "veritas_rootfs_found": False,
-        "veritas_fs_types": [],
-        "veritas_elf_count": 0,
+        "firmarbiter_rootfs_found": False,
+        "firmarbiter_fs_types": [],
+        "firmarbiter_elf_count": 0,
         "tool_claimed_unpack": None,  # filled in later
     }
 
@@ -326,22 +326,22 @@ def probe_unpack(
             fh.write(binwalk_output)
 
     # Analyse what came out
-    result["veritas_fs_types"] = _detect_fs_types(binwalk_output)
+    result["firmarbiter_fs_types"] = _detect_fs_types(binwalk_output)
 
     # Detect all content types present — not just rootfs
     content_types = _detect_content_types(extract_dir, binwalk_output)
-    result["veritas_content_types"] = content_types
-    result["veritas_rootfs_found"] = "linux_rootfs" in content_types
+    result["firmarbiter_content_types"] = content_types
+    result["firmarbiter_rootfs_found"] = "linux_rootfs" in content_types
 
     # ELF count — search rootfs dir first, fall back to whole extraction
     rootfs_dir = _find_rootfs_dir(extract_dir)
     if rootfs_dir:
-        result["veritas_elf_count"] = _count_elf_binaries(rootfs_dir)
+        result["firmarbiter_elf_count"] = _count_elf_binaries(rootfs_dir)
     else:
-        result["veritas_elf_count"] = _count_elf_binaries(extract_dir)
+        result["firmarbiter_elf_count"] = _count_elf_binaries(extract_dir)
         # If enough ELFs found even without standard layout, note it
-        if result["veritas_elf_count"] >= MIN_ELF_COUNT_FOR_ROOTFS:
-            result["veritas_rootfs_found"] = True
+        if result["firmarbiter_elf_count"] >= MIN_ELF_COUNT_FOR_ROOTFS:
+            result["firmarbiter_rootfs_found"] = True
             if "elf_binaries" not in content_types:
                 content_types.append("elf_binaries")
 

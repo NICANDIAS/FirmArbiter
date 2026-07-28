@@ -6,9 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from veritas_core.adapter_registry import discover_adapters
-from veritas_core.docker_backend import DockerBackend
-from veritas_core.docker_supervisor import (
+from firmarbiter_core.adapter_registry import discover_adapters
+from firmarbiter_core.docker_backend import DockerBackend
+from firmarbiter_core.docker_supervisor import (
     DockerAdapterSupervisor,
 )
 
@@ -70,7 +70,7 @@ def create_contract_root(root: Path) -> Path:
         },
         "firmware": {
             "case_id": "case-001",
-            "path": "/veritas/input/firmware",
+            "path": "/firmarbiter/input/firmware",
             "sha256": hashlib.sha256(
                 firmware_content
             ).hexdigest(),
@@ -95,10 +95,10 @@ def create_contract_root(root: Path) -> Path:
             "requirements": []
         },
         "paths": {
-            "workspace": "/veritas/work",
-            "artifacts": "/veritas/artifacts",
-            "events": "/veritas/events/events.jsonl",
-            "control": "/veritas/control"
+            "workspace": "/firmarbiter/work",
+            "artifacts": "/firmarbiter/artifacts",
+            "events": "/firmarbiter/events/events.jsonl",
+            "control": "/firmarbiter/control"
         },
         "integrity": {
             "adapter_manifest_sha256": "a" * 64,
@@ -188,7 +188,7 @@ class DockerAdapterLifecycleTests(unittest.TestCase):
 
                 self.assertEqual(
                     inspection["Config"]["Labels"][
-                        "veritas.adapter_id"
+                        "firmarbiter.adapter_id"
                     ],
                     "mock-docker-adapter",
                 )
@@ -197,7 +197,7 @@ class DockerAdapterLifecycleTests(unittest.TestCase):
                     mount
                     for mount in inspection["Mounts"]
                     if mount["Destination"]
-                    == "/veritas/input"
+                    == "/firmarbiter/input"
                 ]
 
                 self.assertEqual(

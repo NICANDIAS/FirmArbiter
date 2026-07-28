@@ -183,9 +183,9 @@ def test_utc_now_format():
 
 def test_map_contract_path_no_root(tmp_path, monkeypatch=None):
     import os
-    os.environ.pop("VERITAS_CONTRACT_ROOT", None)
-    p = map_contract_path("/veritas/events/events.jsonl")
-    assert str(p) == "/veritas/events/events.jsonl"
+    os.environ.pop("FIRMARBITER_CONTRACT_ROOT", None)
+    p = map_contract_path("/firmarbiter/events/events.jsonl")
+    assert str(p) == "/firmarbiter/events/events.jsonl"
     print("PASS test_map_contract_path_no_root")
 
 

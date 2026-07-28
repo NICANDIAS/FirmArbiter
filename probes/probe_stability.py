@@ -13,7 +13,7 @@ Either case is a meaningful finding: a service that is only briefly
 reachable is not useful for downstream analysis such as fuzzing or
 exploit validation.
 
-Usage (called from run_veritas.py after probe_service succeeds):
+Usage (called from run_firmarbiter.py after probe_service succeeds):
 
     from probes.probe_stability import probe_stability
     result = probe_stability(

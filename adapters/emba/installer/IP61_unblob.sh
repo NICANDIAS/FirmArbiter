@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# EMBA - EMBEDDED LINUX ANALYZER
+#
+# Copyright 2020-2026 Siemens Energy AG
+#
+# EMBA comes with ABSOLUTELY NO WARRANTY. This is free software, and you are
+# welcome to redistribute it under the terms of the GNU General Public License.
+# See LICENSE file for usage of this software.
+#
+# EMBA is licensed under GPLv3
+#
+# Author(s): Michael Messner
+
+# Description:  Installs unblob and dependencies for EMBA
+
+IP61_unblob() {
+  module_title "${FUNCNAME[0]}"
+
+  if [[ "${LIST_DEP}" -eq 1 ]] || [[ "${IN_DOCKER}" -eq 1 ]] || [[ "${DOCKER_SETUP}" -eq 0 ]] || [[ "${FULL}" -eq 1 ]]; then
+    cd "${HOME_PATH}" || (echo "Could not install EMBA component unblob" && exit 1)
+    INSTALL_APP_LIST=()
+
+    print_tool_info "python3-pip" 1
+    print_tool_info "libpython3-dev" 1
+    print_tool_info "zlib1g" 1
+    print_tool_info "zlib1g-dev" 1
+    print_tool_info "liblzo2-2" 1
+    print_tool_info "liblzo2-dev" 1
+    print_tool_info "python3-lzo" 1
+    print_tool_info "gcc" 1
+    print_tool_info "git" 1
+    # print_tool_info "img2simg" 1
+    print_tool_info "android-sdk-libsparse-utils" 1
+    print_tool_info "lz4" 1
+    print_tool_info "lziprecover" 1
+    print_tool_info "lzop" 1
+    # print_tool_info "7zip" 1
+    print_tool_info "unar" 1
+    print_tool_info "xz-utils" 1
+    print_tool_info "zlib1g-dev" 1
+    print_tool_info "upx-ucl" 1
+    print_tool_info "libhyperscan5" 1
+    print_tool_info "libhyperscan-dev" 1
+    print_tool_info "zstd" 1
+    print_tool_info "python3-magic" 1
+    print_tool_info "pkg-config" 1
+    print_tool_info "pkgconf" 1
+    print_tool_info "erofs-utils" 1
+    print_tool_info "partclone" 1
+    print_tool_info "python3-lief" 1
+    print_tool_info "libmagic1t64" 1
+    print_tool_info "e2fsprogs" 1
+    print_tool_info "libext2fs2" 1
+    print_tool_info "sasquatch" 1
+
+    print_file_info "7zip.tar.xz" "7zip.tar.xz" "https://www.7-zip.org/a/7z2600-linux-x64.tar.xz" "external/7zip.tar.xz"
+
+    if [[ "${LIST_DEP}" -eq 1 ]] || [[ "${DOCKER_SETUP}" -eq 1 ]]; then
+      ANSWER=("n")
+    else
+      echo -e "\\n""${MAGENTA}""${BOLD}""unblob with all dependencies (if not already on the system) will be downloaded and installed!""${NC}"
+      ANSWER=("y")
+    fi
+    case ${ANSWER:0:1} in
+    y | Y)
+      apt-get install "${INSTALL_APP_LIST[@]}" -y
+
+      cd "${HOME_PATH}" || (echo "Could not install EMBA component unblob" && exit 1)
+
+      download_file "7zip.tar.xz" "https://www.7-zip.org/a/7z2600-linux-x64.tar.xz" "external/7zip.tar.xz"
+      echo "[*] Installing 7zip"
+      install -d /usr/local/bin
+      tar -xf external/7zip.tar.xz -C /usr/local/bin 7zz 7zzs
+      ln -sf /usr/local/bin/7zz /usr/local/bin/7z
+      rm -f external/7zip.tar.xz
+
+      echo "[*] Cloning unblob"
+      git clone https://github.com/onekey-sec/unblob.git external/unblob
+      cd external/unblob || exit 1
+      # ./install-deps.sh
+      echo "[*] Building unblob"
+      pip3 install -e . --break-system-packages
+
+      echo "[*] Testing unblob installation"
+      if command -v unblob >/dev/null; then
+        unblob --show-external-dependencies
+        echo -e "${GREEN}unblob installed successfully${NC}"
+        echo
+      else
+        echo -e "${ORANGE}unblob installation failed - check it manually${NC}"
+        echo
+        exit 1
+      fi
+      cd "${HOME_PATH}" || (echo "Could not install EMBA component unblob" && exit 1)
+      ;;
+    esac
+  fi
+}

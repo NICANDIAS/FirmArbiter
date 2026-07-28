@@ -3,7 +3,7 @@
 set -euo pipefail
 
 LOCK_FILE="${1:?python dependency lock path required}"
-PROVENANCE="/opt/veritas-adapter/provenance"
+PROVENANCE="/opt/firmarbiter-adapter/provenance"
 DOWNLOAD_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -12,14 +12,14 @@ cleanup() {
 trap cleanup EXIT
 
 test -s "$LOCK_FILE"
-mkdir -p "$PROVENANCE" /opt/veritas-adapter/locks
+mkdir -p "$PROVENANCE" /opt/firmarbiter-adapter/locks
 
 install \
     -o root \
     -g root \
     -m 0644 \
     "$LOCK_FILE" \
-    /opt/veritas-adapter/locks/python-source-lock.tsv
+    /opt/firmarbiter-adapter/locks/python-source-lock.tsv
 
 {
     IFS=$'\t' read -r header_name header_version header_url header_sha256
@@ -88,7 +88,7 @@ if version != "0.8.5":
         f"Unexpected ubi-reader version: {version}"
     )
 
-Path("/opt/veritas-adapter/provenance/python-dependencies.json").write_text(
+Path("/opt/firmarbiter-adapter/provenance/python-dependencies.json").write_text(
     json.dumps(
         {
             "ubi-reader": version,
@@ -109,7 +109,7 @@ sha256sum "$(command -v ubireader_extract_files)" \
     > "$PROVENANCE/ubireader-extract-files.sha256"
 
 sha256sum \
-    /opt/veritas-adapter/locks/python-source-lock.tsv \
+    /opt/firmarbiter-adapter/locks/python-source-lock.tsv \
     "$PROVENANCE/python-dependencies.json" \
     "$PROVENANCE/ubireader-extract-files.path" \
     "$PROVENANCE/ubireader-extract-files.sha256" \

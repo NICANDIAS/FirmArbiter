@@ -8,9 +8,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 from adapters.firmae.entrypoint import dispatch_candidate
-from run_veritas import milestone_lines
-from veritas_core.lifecycle_watchdog import LifecycleWatchdog
-from veritas_core.run_coordinator import (
+from run_firmarbiter import milestone_lines
+from firmarbiter_core.lifecycle_watchdog import LifecycleWatchdog
+from firmarbiter_core.run_coordinator import (
     candidate_stage_blocks_following_work,
     derive_candidate_stage_results,
 )
@@ -319,7 +319,7 @@ class CandidateStageOutcomeTests(unittest.TestCase):
                     "adapter_hints": {},
                 },
                 "firmware": {
-                    "path": "/veritas/input/firmware",
+                    "path": "/firmarbiter/input/firmware",
                     "case_id": "case-001",
                     "sha256": "a" * 64,
                 },
@@ -330,14 +330,14 @@ class CandidateStageOutcomeTests(unittest.TestCase):
                     "shutdown_grace_seconds": 1,
                 },
                 "paths": {
-                    "workspace": "/veritas/work",
-                    "artifacts": "/veritas/artifacts",
+                    "workspace": "/firmarbiter/work",
+                    "artifacts": "/firmarbiter/artifacts",
                 },
             }
             mapped = {
-                "/veritas/input/firmware": firmware,
-                "/veritas/work": workspace,
-                "/veritas/artifacts": artifacts,
+                "/firmarbiter/input/firmware": firmware,
+                "/firmarbiter/work": workspace,
+                "/firmarbiter/artifacts": artifacts,
             }
             writer = RecordingEventWriter()
             runtime = SimpleNamespace(pid=1234)
@@ -442,19 +442,19 @@ class CandidateStageOutcomeTests(unittest.TestCase):
                     "adapter_hints": {},
                 },
                 "firmware": {
-                    "path": "/veritas/input/firmware",
+                    "path": "/firmarbiter/input/firmware",
                     "case_id": "case-001",
                     "sha256": "a" * 64,
                 },
                 "paths": {
-                    "workspace": "/veritas/work",
-                    "artifacts": "/veritas/artifacts",
+                    "workspace": "/firmarbiter/work",
+                    "artifacts": "/firmarbiter/artifacts",
                 },
             }
             mapped = {
-                "/veritas/input/firmware": firmware,
-                "/veritas/work": workspace,
-                "/veritas/artifacts": artifacts,
+                "/firmarbiter/input/firmware": firmware,
+                "/firmarbiter/work": workspace,
+                "/firmarbiter/artifacts": artifacts,
             }
             writer = RecordingEventWriter()
 

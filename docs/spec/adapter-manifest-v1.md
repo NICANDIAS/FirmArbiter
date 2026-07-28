@@ -1,4 +1,4 @@
-# VERITAS Adapter Manifest v1
+# FIRMARBITER Adapter Manifest v1
 
 Status: Draft  
 Manifest schema version: 1.0  
@@ -6,10 +6,10 @@ Adapter Contract version: 1.0
 
 ## 1. Purpose
 
-The adapter manifest is a declarative description of a VERITAS candidate
+The adapter manifest is a declarative description of a FIRMARBITER candidate
 adapter package.
 
-It allows the VERITAS core to discover, validate, build and authorise an
+It allows the FIRMARBITER core to discover, validate, build and authorise an
 adapter without containing knowledge of any named candidate.
 
 The manifest is not an execution script and must not contain candidate success

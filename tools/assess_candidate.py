@@ -2,7 +2,7 @@
 """
 tools/assess_candidate.py — pre-onboarding compatibility assessment.
 
-Automates the checks VERITAS engineers had to discover manually and
+Automates the checks FIRMARBITER engineers had to discover manually and
 expensively while onboarding EMBA (bare-host/DinD assumptions, multi-service
 architecture, architecture-hardcoded install scripts, mid-install reboots).
 A user points this at a candidate tool's repo BEFORE writing any adapter
@@ -36,7 +36,7 @@ class CheckResult:
 
 def clone_if_url(target):
     if target.startswith("http://") or target.startswith("https://") or target.endswith(".git"):
-        tmp_dir = tempfile.mkdtemp(prefix="veritas_assess_")
+        tmp_dir = tempfile.mkdtemp(prefix="firmarbiter_assess_")
         print(f"Cloning {target} to {tmp_dir} ...")
         result = subprocess.run(
             ["git", "clone", "--depth", "1", target, tmp_dir],
@@ -292,7 +292,7 @@ def run_all_checks(repo_path, git_url):
 
 
 def render_report(results, candidate_name):
-    lines = [f"# VERITAS Compatibility Assessment: {candidate_name}", ""]
+    lines = [f"# FIRMARBITER Compatibility Assessment: {candidate_name}", ""]
     status_counts = {"PASS": 0, "WARN": 0, "FAIL": 0, "INFO": 0}
     for r in results:
         status_counts[r.status] += 1
@@ -326,7 +326,7 @@ def render_report(results, candidate_name):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Assess a candidate tool's compatibility with the VERITAS Adapter Contract")
+    parser = argparse.ArgumentParser(description="Assess a candidate tool's compatibility with the FIRMARBITER Adapter Contract")
     parser.add_argument("target", help="Local path or git URL of the candidate tool's repo")
     parser.add_argument("--output", default=None, help="Path to save the markdown report (default: print to stdout only)")
     args = parser.parse_args()

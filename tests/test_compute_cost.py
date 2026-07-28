@@ -8,8 +8,8 @@ import unittest
 import uuid
 from pathlib import Path
 
-from veritas_core.adapter_registry import discover_adapters
-from veritas_core.compute_cost import (
+from firmarbiter_core.adapter_registry import discover_adapters
+from firmarbiter_core.compute_cost import (
     DockerComputeCostSampler,
     _configured_memory_limit,
     parse_percentage,
@@ -17,11 +17,11 @@ from veritas_core.compute_cost import (
     parse_usage_pair,
     resource_sample_from_docker,
 )
-from veritas_core.docker_backend import DockerBackend
-from veritas_core.docker_supervisor import (
+from firmarbiter_core.docker_backend import DockerBackend
+from firmarbiter_core.docker_supervisor import (
     DockerAdapterSupervisor,
 )
-from veritas_core.lifecycle_watchdog import (
+from firmarbiter_core.lifecycle_watchdog import (
     LifecycleWatchdog,
 )
 
@@ -87,7 +87,7 @@ def create_contract_root(
         },
         "firmware": {
             "case_id": "case-001",
-            "path": "/veritas/input/firmware",
+            "path": "/firmarbiter/input/firmware",
             "sha256": hashlib.sha256(
                 firmware_content
             ).hexdigest(),
@@ -112,10 +112,10 @@ def create_contract_root(
             "requirements": []
         },
         "paths": {
-            "workspace": "/veritas/work",
-            "artifacts": "/veritas/artifacts",
-            "events": "/veritas/events/events.jsonl",
-            "control": "/veritas/control"
+            "workspace": "/firmarbiter/work",
+            "artifacts": "/firmarbiter/artifacts",
+            "events": "/firmarbiter/events/events.jsonl",
+            "control": "/firmarbiter/control"
         },
         "integrity": {
             "adapter_manifest_sha256": manifest_sha256,

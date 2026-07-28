@@ -31,13 +31,13 @@ cleanup() {
         done
     fi
 
-    veritas-firmae-database stop \
+    firmarbiter-firmae-database stop \
         >/dev/null 2>&1 || true
 
     chown -R \
         "$HOST_UID:$HOST_GID" \
         /opt/firmae/scratch \
-        /veritas/evidence \
+        /firmarbiter/evidence \
         2>/dev/null || true
 }
 
@@ -45,8 +45,8 @@ trap cleanup EXIT
 
 echo "===== DATABASE INITIALISATION ====="
 
-veritas-firmae-database initialize \
-    > /veritas/evidence/database.log \
+firmarbiter-firmae-database initialize \
+    > /firmarbiter/evidence/database.log \
     2>&1
 
 export PGPASSWORD=firmadyne
@@ -63,7 +63,7 @@ psql \
     --variable firmware_sha="$FIRMWARE_SHA" \
     --variable firmware_name="$FIRMWARE_NAME" \
     --variable brand_name="$BRAND_NAME" \
-    > /veritas/evidence/database-seed.log \
+    > /firmarbiter/evidence/database-seed.log \
     2>&1 <<'SQL'
 INSERT INTO brand (name)
 VALUES (:'brand_name')
@@ -82,7 +82,7 @@ INSERT INTO image (
 VALUES (
     :iid,
     :'firmware_name',
-    'VERITAS reconstructed FirmAE image record',
+    'FIRMARBITER reconstructed FirmAE image record',
     (
         SELECT id
         FROM brand
@@ -130,20 +130,20 @@ psql \
         FROM image
         WHERE id = $IID;
     " \
-    > /veritas/evidence/database-image-record.txt
+    > /firmarbiter/evidence/database-image-record.txt
 
 echo "Database image record:"
-cat /veritas/evidence/database-image-record.txt
+cat /firmarbiter/evidence/database-image-record.txt
 
 grep -q "^${IID}|" \
-    /veritas/evidence/database-image-record.txt
+    /firmarbiter/evidence/database-image-record.txt
 
 mkdir -p \
     /opt/firmae/images \
     "$WORK_DIR"
 
 cp \
-    /veritas/artifacts/rootfs.tar.gz \
+    /firmarbiter/artifacts/rootfs.tar.gz \
     "/opt/firmae/images/$IID.tar.gz"
 
 printf '%s\n' "$ARCH" \
@@ -164,13 +164,13 @@ python3 -u \
     -i "$IID" \
     -f "./images/$IID.tar.gz" \
     -h 127.0.0.1 \
-    > /veritas/evidence/tar2db.log \
+    > /firmarbiter/evidence/tar2db.log \
     2>&1
 
 END_TAR="$(date -u +%s.%N)"
 
 python3 - "$START_TAR" "$END_TAR" \
-    > /veritas/evidence/tar2db-duration.json <<'PY'
+    > /firmarbiter/evidence/tar2db-duration.json <<'PY'
 import json
 import sys
 
@@ -193,11 +193,11 @@ psql \
         FROM object_to_image
         WHERE iid = $IID;
     " \
-    > /veritas/evidence/indexed-object-count.txt
+    > /firmarbiter/evidence/indexed-object-count.txt
 
 INDEXED_COUNT="$(
     tr -d '[:space:]' \
-        < /veritas/evidence/indexed-object-count.txt
+        < /firmarbiter/evidence/indexed-object-count.txt
 )"
 
 echo "Indexed rootfs objects: $INDEXED_COUNT"
@@ -217,13 +217,13 @@ START_IMAGE="$(date -u +%s.%N)"
     "$IID" \
     "$ARCH" \
     "$FIRMWARE_NAME" \
-    > /veritas/evidence/makeImage.log \
+    > /firmarbiter/evidence/makeImage.log \
     2>&1
 
 END_IMAGE="$(date -u +%s.%N)"
 
 python3 - "$START_IMAGE" "$END_IMAGE" \
-    > /veritas/evidence/make-image-duration.json <<'PY'
+    > /firmarbiter/evidence/make-image-duration.json <<'PY'
 import json
 import sys
 
@@ -240,25 +240,25 @@ test -s "$IMAGE_PATH"
 qemu-img info \
     --output=json \
     "$IMAGE_PATH" \
-    > /veritas/evidence/qemu-image-info.json
+    > /firmarbiter/evidence/qemu-image-info.json
 
 fdisk -l "$IMAGE_PATH" \
-    > /veritas/evidence/partition-table.txt
+    > /firmarbiter/evidence/partition-table.txt
 
 stat \
     --printf='size_bytes=%s\nblocks=%b\nblock_size=%B\n' \
     "$IMAGE_PATH" \
-    > /veritas/evidence/image-stat.txt
+    > /firmarbiter/evidence/image-stat.txt
 
 find "$WORK_DIR" \
     -maxdepth 2 \
     -printf '%y\t%s\t%p\n' \
-    > /veritas/evidence/work-directory.txt
+    > /firmarbiter/evidence/work-directory.txt
 
 chown -R \
     "$HOST_UID:$HOST_GID" \
     /opt/firmae/scratch \
-    /veritas/evidence
+    /firmarbiter/evidence
 
 echo
 echo "QEMU filesystem image preparation passed"

@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from veritas_core.adapter_supervisor import (
+from firmarbiter_core.adapter_supervisor import (
     AdapterProcessSupervisor,
 )
-from veritas_core.event_protocol import (
+from firmarbiter_core.event_protocol import (
     AdapterEventStream,
     EventProtocolError,
 )
@@ -58,7 +58,7 @@ def create_contract_root(root: Path) -> Path:
         },
         "firmware": {
             "case_id": "case-001",
-            "path": "/veritas/input/firmware",
+            "path": "/firmarbiter/input/firmware",
             "sha256": sha256_bytes(firmware_content),
             "size_bytes": len(firmware_content),
             "delivery_semantics": "opaque-original-bytes",
@@ -81,10 +81,10 @@ def create_contract_root(root: Path) -> Path:
             "requirements": []
         },
         "paths": {
-            "workspace": "/veritas/work",
-            "artifacts": "/veritas/artifacts",
-            "events": "/veritas/events/events.jsonl",
-            "control": "/veritas/control"
+            "workspace": "/firmarbiter/work",
+            "artifacts": "/firmarbiter/artifacts",
+            "events": "/firmarbiter/events/events.jsonl",
+            "control": "/firmarbiter/control"
         },
         "integrity": {
             "adapter_manifest_sha256": "a" * 64,

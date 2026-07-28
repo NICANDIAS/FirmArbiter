@@ -4,12 +4,12 @@ set -euo pipefail
 
 ACTION="${1:-}"
 
-STATE_ROOT="${VERITAS_FIRMAE_STATE_ROOT:-/var/lib/veritas/firmae}"
+STATE_ROOT="${FIRMARBITER_FIRMAE_STATE_ROOT:-/var/lib/firmarbiter/firmae}"
 PG_ROOT="$STATE_ROOT/postgres"
 PGDATA="$PG_ROOT/data"
 PGSOCKET="$PG_ROOT/socket"
 PGLOG="$PG_ROOT/postgres.log"
-PGPORT="${VERITAS_FIRMAE_PGPORT:-55432}"
+PGPORT="${FIRMARBITER_FIRMAE_PGPORT:-55432}"
 
 DATABASE_NAME="firmware"
 DATABASE_USER="firmadyne"
@@ -120,7 +120,7 @@ initialize_cluster() {
 
         cat >> "$PGDATA/postgresql.conf" <<CONFIG
 
-# VERITAS FIRMAE DATABASE SETTINGS
+# FIRMARBITER FIRMAE DATABASE SETTINGS
 listen_addresses = '127.0.0.1'
 port = ${PGPORT}
 unix_socket_directories = '${PGSOCKET}'

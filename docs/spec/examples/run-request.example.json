@@ -15,7 +15,7 @@
   },
   "firmware": {
     "case_id": "case-001",
-    "path": "/veritas/input/firmware",
+    "path": "/firmarbiter/input/firmware",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "size_bytes": 16777216,
     "delivery_semantics": "opaque-original-bytes",
@@ -53,10 +53,10 @@
     }
   },
   "paths": {
-    "workspace": "/veritas/work",
-    "artifacts": "/veritas/artifacts",
-    "events": "/veritas/events/events.jsonl",
-    "control": "/veritas/control"
+    "workspace": "/firmarbiter/work",
+    "artifacts": "/firmarbiter/artifacts",
+    "events": "/firmarbiter/events/events.jsonl",
+    "control": "/firmarbiter/control"
   },
   "integrity": {
     "adapter_manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

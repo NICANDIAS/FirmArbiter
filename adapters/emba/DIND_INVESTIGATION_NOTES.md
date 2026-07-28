@@ -31,7 +31,7 @@ zero actual work done — see git history for that investigation).
   database population; some dependency-check paths may be tied to that
   same flag. S09 handles the missing tool gracefully (reports "nothing
   found" rather than crashing). Low priority — does not affect the
-  pipeline stages VERITAS actually measures (unpack, boot, endpoints).
+  pipeline stages FIRMARBITER actually measures (unpack, boot, endpoints).
 - `cp: cannot stat './helpers/base.html'`, `sed: can't read .../html-report/*.html`,
   `find: './modules': No such file or directory` — HTML report generation
   assumes relative paths from EMBA's own repo root as the working
@@ -52,7 +52,7 @@ The privileged mode and /dev/fuse device access are still required
 
 ## NEW FINDING (separate from DinD): binwalk/unblob/rev missing from final image
 
-Confirmed via direct check inside veritas-adapter-emba:0.1.0:
+Confirmed via direct check inside firmarbiter-adapter-emba:0.1.0:
     which binwalk unblob rev
     -> all three return nothing (not installed / not on PATH)
 
@@ -125,7 +125,7 @@ This explains every finding from tonight's investigation:
    behavior — this has NOT been tested yet, it's a real open question.
 4. If lazy install requires internet access at analysis-time (likely,
    given it downloads binwalk/unblob), this has real implications for
-   the VERITAS adapter contract — a "run once per firmware sample" model
+   the FIRMARBITER adapter contract — a "run once per firmware sample" model
    may need network access per-run, not just at build time. This is a
    genuinely new architectural question for the adapter design, not
    solved by anything tried so far.

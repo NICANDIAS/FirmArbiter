@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # adapters/_template/entrypoint.py
 """
-VERITAS Adapter Template — entrypoint.py
+FIRMARBITER Adapter Template — entrypoint.py
 
 HOW TO USE THIS TEMPLATE:
   Copy this whole adapters/_template/ directory to adapters/<your_tool>/,
@@ -34,8 +34,8 @@ from lifecycle import (
     ShutdownCoordinator,
 )
 
-SCHEMA_PATH = "/veritas/schemas/adapter-event-v1.schema.json"
-REQUEST_PATH = "/veritas/input/request.json"
+SCHEMA_PATH = "/firmarbiter/schemas/adapter-event-v1.schema.json"
+REQUEST_PATH = "/firmarbiter/input/request.json"
 
 
 # ---------------------------------------------------------------------

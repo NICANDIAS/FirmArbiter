@@ -10,18 +10,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from veritas_core.adapter_registry import discover_adapters
-from veritas_core.docker_backend import DockerBackend
-from veritas_core.docker_supervisor import (
+from firmarbiter_core.adapter_registry import discover_adapters
+from firmarbiter_core.docker_backend import DockerBackend
+from firmarbiter_core.docker_supervisor import (
     DockerAdapterSupervisor,
 )
-from veritas_core.probe_orchestrator import (
+from firmarbiter_core.probe_orchestrator import (
     IndependentProbeOrchestrator,
 )
-from veritas_core.probes.http_snapshot import (
+from firmarbiter_core.probes.http_snapshot import (
     capture_http_snapshot,
 )
-from veritas_core.probes.service_authenticity import (
+from firmarbiter_core.probes.service_authenticity import (
     evaluate_http_authenticity,
 )
 
@@ -150,7 +150,7 @@ def create_contract_root(
         },
         "firmware": {
             "case_id": "case-001",
-            "path": "/veritas/input/firmware",
+            "path": "/firmarbiter/input/firmware",
             "sha256": firmware_sha256,
             "size_bytes": len(firmware_content),
             "delivery_semantics": "opaque-original-bytes",
@@ -173,10 +173,10 @@ def create_contract_root(
             "requirements": []
         },
         "paths": {
-            "workspace": "/veritas/work",
-            "artifacts": "/veritas/artifacts",
-            "events": "/veritas/events/events.jsonl",
-            "control": "/veritas/control"
+            "workspace": "/firmarbiter/work",
+            "artifacts": "/firmarbiter/artifacts",
+            "events": "/firmarbiter/events/events.jsonl",
+            "control": "/firmarbiter/control"
         },
         "integrity": {
             "adapter_manifest_sha256": manifest_sha256,

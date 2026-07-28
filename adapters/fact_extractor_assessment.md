@@ -1,4 +1,4 @@
-# VERITAS Compatibility Assessment: fact_extractor
+# FIRMARBITER Compatibility Assessment: fact_extractor
 
 **Summary:** 0 FAIL, 0 WARN, 6 PASS, 1 INFO
 

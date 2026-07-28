@@ -7,7 +7,7 @@ cd /opt/firmae
 WORK_DIR="/opt/firmae/scratch/$IID"
 RUNNER="$WORK_DIR/run.sh"
 IMAGE_PATH="$WORK_DIR/image.raw"
-RUN_LOG="/veritas/evidence/generated-run.log"
+RUN_LOG="/firmarbiter/evidence/generated-run.log"
 
 STOP_REQUESTED=0
 RUNNER_PID=""
@@ -73,7 +73,7 @@ final_cleanup() {
     chown -R \
         "$HOST_UID:$HOST_GID" \
         "$WORK_DIR" \
-        /veritas/evidence \
+        /firmarbiter/evidence \
         >/dev/null 2>&1 || true
 }
 
@@ -93,7 +93,7 @@ echo "Starting generated FirmAE runner"
 RUNNER_PID=$!
 
 printf '%s\n' "$RUNNER_PID" \
-    > /veritas/evidence/generated-runner.pid
+    > /firmarbiter/evidence/generated-runner.pid
 
 set +e
 wait "$RUNNER_PID"
@@ -106,7 +106,7 @@ then
 fi
 
 printf '%s\n' "$RUNNER_EXIT_CODE" \
-    > /veritas/evidence/generated-runner-exit-code.txt
+    > /firmarbiter/evidence/generated-runner-exit-code.txt
 
 echo "Generated FirmAE runner exited: $RUNNER_EXIT_CODE"
 

@@ -1,13 +1,13 @@
 # adapters/firmadyne/Dockerfile
-# Builds the VERITAS FIRMADYNE adapter image.
+# Builds the FIRMARBITER FIRMADYNE adapter image.
 # Platform: linux/amd64
 FROM --platform=linux/amd64 ubuntu:22.04@sha256:ce941a2a18bbb922e434d6d6d2b31e571a5c3826eaf6ada0a41dcc905bd2d906
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99veritas && \
-    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/99veritas
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99firmarbiter && \
+    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/99firmarbiter
 
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
@@ -54,7 +54,7 @@ RUN git clone "${FIRMADYNE_REPO}" /opt/firmadyne && \
 # Download FIRMADYNE runtime binaries (kernels, console, libnvram)
 RUN cd /opt/firmadyne && sh ./download.sh
 
-# Apply VERITAS compatibility patch to makeImage.sh
+# Apply FIRMARBITER compatibility patch to makeImage.sh
 COPY patches/0001-makeimage-cleanup-compatibility.patch /tmp/
 RUN cd /opt/firmadyne && \
     patch -p1 < /tmp/0001-makeimage-cleanup-compatibility.patch && \
@@ -68,9 +68,9 @@ RUN service postgresql start && \
     su postgres -c "psql -d firmware -f /opt/firmadyne/database/schema" && \
     service postgresql stop
 
-# VERITAS entrypoint
-COPY entrypoint.py /veritas_entrypoint.py
-RUN chmod +x /veritas_entrypoint.py
+# FIRMARBITER entrypoint
+COPY entrypoint.py /firmarbiter_entrypoint.py
+RUN chmod +x /firmarbiter_entrypoint.py
 
 WORKDIR /opt/firmadyne
-ENTRYPOINT ["python3", "/veritas_entrypoint.py"]
+ENTRYPOINT ["python3", "/firmarbiter_entrypoint.py"]

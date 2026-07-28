@@ -1,7 +1,7 @@
 # adapters/_template/lifecycle/heartbeat.py
 """
 HeartbeatWorker — background thread that emits periodic heartbeat events
-so the VERITAS coordinator's watchdog does not treat a slow-but-alive
+so the FIRMARBITER coordinator's watchdog does not treat a slow-but-alive
 adapter (e.g. QEMU under ARM64 translation) as hung.
 """
 

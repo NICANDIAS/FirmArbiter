@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:veritas:schema:run-request:1.0",
-  "title": "VERITAS Run Request v1",
+  "$id": "urn:firmarbiter:schema:run-request:1.0",
+  "title": "FIRMARBITER Run Request v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -90,7 +90,7 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         },
         "path": {
-          "const": "/veritas/input/firmware"
+          "const": "/firmarbiter/input/firmware"
         },
         "sha256": {
           "type": "string",
@@ -236,16 +236,16 @@
       ],
       "properties": {
         "workspace": {
-          "const": "/veritas/work"
+          "const": "/firmarbiter/work"
         },
         "artifacts": {
-          "const": "/veritas/artifacts"
+          "const": "/firmarbiter/artifacts"
         },
         "events": {
-          "const": "/veritas/events/events.jsonl"
+          "const": "/firmarbiter/events/events.jsonl"
         },
         "control": {
-          "const": "/veritas/control"
+          "const": "/firmarbiter/control"
         }
       }
     },

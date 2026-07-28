@@ -77,15 +77,15 @@ def utc_now() -> str:
 
 
 def map_contract_path(contract_path: str) -> Path:
-    contract_root = os.environ.get("VERITAS_CONTRACT_ROOT")
+    contract_root = os.environ.get("FIRMARBITER_CONTRACT_ROOT")
     if not contract_root:
         return Path(contract_path)
     path = PurePosixPath(contract_path)
     try:
-        relative = path.relative_to("/veritas")
+        relative = path.relative_to("/firmarbiter")
     except ValueError as exc:
         raise ContractError(
-            f"Contract path is outside /veritas: {contract_path}"
+            f"Contract path is outside /firmarbiter: {contract_path}"
         ) from exc
     return Path(contract_root).joinpath(*relative.parts)
 
@@ -330,7 +330,7 @@ def stage_unpack(
 ) -> bool:
     """Stage 1+2: extract filesystem and detect architecture."""
 
-    print("[VERITAS][firmadyne] Stage 1: extracting filesystem", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 1: extracting filesystem", flush=True)
 
     extractor = FIRMADYNE_HOME / "sources/extractor/extractor.py"
     images_dir = FIRMADYNE_IMAGES
@@ -340,7 +340,7 @@ def stage_unpack(
     result = subprocess.run(
         [
             "python3", str(extractor),
-            "-b", "VERITAS",
+            "-b", "FIRMARBITER",
             "-sql", "127.0.0.1",
             "-np", "-nk",
             str(firmware_path),
@@ -389,26 +389,26 @@ def stage_unpack(
         )
         return False
 
-    # Copy rootfs to artifacts and extract for VERITAS independent validation
+    # Copy rootfs to artifacts and extract for FIRMARBITER independent validation
     import shutil, tarfile
     rootfs_copy = artifacts_path / "rootfs.tar.gz"
     shutil.copy2(str(rootfs), str(rootfs_copy))
 
-    # VERITAS expects extracted rootfs at artifacts/unpack/rootfs/
+    # FIRMARBITER expects extracted rootfs at artifacts/unpack/rootfs/
     unpack_dir = artifacts_path / "unpack" / "rootfs"
     unpack_dir.mkdir(parents=True, exist_ok=True)
     try:
         with tarfile.open(str(rootfs_copy), "r:gz") as tf:
             tf.extractall(str(unpack_dir))
     except Exception as exc:
-        print(f"[VERITAS][firmadyne] WARNING: rootfs extraction for validation failed: {exc}", flush=True)
+        print(f"[FIRMARBITER][firmadyne] WARNING: rootfs extraction for validation failed: {exc}", flush=True)
 
     event_writer.emit(
         "extraction_complete",
     )
 
     # Stage 2: architecture detection
-    print("[VERITAS][firmadyne] Stage 2: detecting architecture", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 2: detecting architecture", flush=True)
 
     run_checked(
         ["bash", str(FIRMADYNE_HOME / "scripts/getArch.sh"), str(rootfs)],
@@ -442,7 +442,7 @@ def stage_unpack(
         message="Filesystem extracted and architecture detected.",
     )
 
-    print(f"[VERITAS][firmadyne] Architecture: {arch}", flush=True)
+    print(f"[FIRMARBITER][firmadyne] Architecture: {arch}", flush=True)
     return True
 
 
@@ -457,7 +457,7 @@ def stage_emulate(
 ) -> tuple[bool, str, subprocess.Popen | None]:
     """Stages 3-6: tar2db, makeImage, inferNetwork, launch QEMU."""
 
-    print("[VERITAS][firmadyne] Stage 3: loading filesystem database", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 3: loading filesystem database", flush=True)
 
     rootfs = FIRMADYNE_IMAGES / f"{iid}.tar.gz"
 
@@ -475,7 +475,7 @@ def stage_emulate(
         env=env,
     )
 
-    print("[VERITAS][firmadyne] Stage 4: creating QEMU image", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 4: creating QEMU image", flush=True)
 
     run_checked(
         ["bash", str(FIRMADYNE_HOME / "scripts/makeImage.sh"), iid, arch],
@@ -493,7 +493,7 @@ def stage_emulate(
             f"QEMU disk image not found: {raw_image}",
         )
 
-    print("[VERITAS][firmadyne] Stage 5: inferring network", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 5: inferring network", flush=True)
 
     run_checked(
         ["bash", str(FIRMADYNE_HOME / "scripts/inferNetwork.sh"), iid, arch],
@@ -552,7 +552,7 @@ def stage_emulate(
     else:
         (artifacts_path / "network_mode.txt").write_text(f"tap:{target_ip}\n")
 
-    print("[VERITAS][firmadyne] Stage 6: launching final emulation", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 6: launching final emulation", flush=True)
 
     qemu_proc = subprocess.Popen(
         ["bash", str(run_sh)],
@@ -569,7 +569,7 @@ def stage_emulate(
     if socket_mode:
         # Socket-mode networking: no TAP interface created on host.
         # Confirm QEMU stays alive for at least 10 seconds.
-        print("[VERITAS][firmadyne] Socket-mode networking detected — waiting for QEMU stability", flush=True)
+        print("[FIRMARBITER][firmadyne] Socket-mode networking detected — waiting for QEMU stability", flush=True)
         for _i in range(10):
             if qemu_proc.poll() is not None:
                 raise AdapterOperationalError(
@@ -578,7 +578,7 @@ def stage_emulate(
                     "QEMU exited within 10s of launch (socket-mode).",
                 )
             time.sleep(1)
-        print("[VERITAS][firmadyne] QEMU stable in socket mode", flush=True)
+        print("[FIRMARBITER][firmadyne] QEMU stable in socket mode", flush=True)
     else:
         tap_name = f"tap{iid}_0"
         tap_ready = False
@@ -608,8 +608,8 @@ def stage_emulate(
                 f"TAP interface {tap_name} did not appear within 20s.",
             )
 
-    # Write deterministic boot marker for VERITAS probe
-    boot_ip_file = artifacts_path / "veritas_boot_ip.txt"
+    # Write deterministic boot marker for FIRMARBITER probe
+    boot_ip_file = artifacts_path / "firmarbiter_boot_ip.txt"
     boot_ip_file.write_text(target_ip + "\n")
 
     duration = time.monotonic() - stage_start
@@ -621,7 +621,7 @@ def stage_emulate(
     )
 
     print(
-        f"[VERITAS][firmadyne] BOOT SUCCESS interface up {target_ip}",
+        f"[FIRMARBITER][firmadyne] BOOT SUCCESS interface up {target_ip}",
         flush=True,
     )
 
@@ -639,7 +639,7 @@ def stage_endpoint_discovery(
 
     import socket
 
-    print("[VERITAS][firmadyne] Stage 7: endpoint discovery", flush=True)
+    print("[FIRMARBITER][firmadyne] Stage 7: endpoint discovery", flush=True)
 
     deadline = time.monotonic() + endpoint_wait_timeout
     found = False
@@ -718,9 +718,9 @@ def load_and_validate_request(
 
     firmware_contract_path = firmware.get("path")
 
-    if firmware_contract_path != "/veritas/input/firmware":
+    if firmware_contract_path != "/firmarbiter/input/firmware":
         raise ContractError(
-            "firmware.path must be '/veritas/input/firmware'"
+            "firmware.path must be '/firmarbiter/input/firmware'"
         )
 
     firmware_path = map_contract_path(firmware_contract_path)
@@ -749,7 +749,7 @@ def main() -> int:
         request = load_and_validate_request(request_path)
     except ContractError as exc:
         print(
-            f"[VERITAS][firmadyne] contract error: {exc}",
+            f"[FIRMARBITER][firmadyne] contract error: {exc}",
             file=sys.stderr,
         )
         return 2
@@ -783,7 +783,7 @@ def main() -> int:
 
     def handle_signal(signum: int, _frame: Any) -> None:
         print(
-            f"[VERITAS][firmadyne] received signal {signum}",
+            f"[FIRMARBITER][firmadyne] received signal {signum}",
             file=sys.stderr,
         )
         signal_received.set()
@@ -897,7 +897,7 @@ def main() -> int:
                         "code": "FIRMADYNE_RUNTIME_EXITED",
                         "phase": "candidate_execution",
                         "message": (
-                            f"FIRMADYNE QEMU exited before VERITAS "
+                            f"FIRMADYNE QEMU exited before FIRMARBITER "
                             f"requested shutdown: return code {rc}"
                         ),
                         "recoverable": False,

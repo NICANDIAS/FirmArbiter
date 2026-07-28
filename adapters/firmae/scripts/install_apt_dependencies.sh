@@ -45,7 +45,7 @@ then
     exit 1
 fi
 
-PROVENANCE="/opt/veritas-adapter/provenance"
+PROVENANCE="/opt/firmarbiter-adapter/provenance"
 
 mkdir -p \
     "$PROVENANCE" \
@@ -67,7 +67,7 @@ deb [snapshot=yes] http://security.ubuntu.com/ubuntu jammy-security main univers
 SOURCES
 
 # Force all snapshot-enabled repositories to this exact timestamp.
-cat > /etc/apt/apt.conf.d/50veritas-snapshot <<SNAPSHOT
+cat > /etc/apt/apt.conf.d/50firmarbiter-snapshot <<SNAPSHOT
 APT::Snapshot "${SNAPSHOT_ID}";
 SNAPSHOT
 
@@ -77,7 +77,7 @@ printf '%s\n' "$SNAPSHOT_ID" \
 cp /etc/apt/sources.list \
     "$PROVENANCE/apt-sources.list"
 
-cp /etc/apt/apt.conf.d/50veritas-snapshot \
+cp /etc/apt/apt.conf.d/50firmarbiter-snapshot \
     "$PROVENANCE/apt-snapshot.conf"
 
 cp "$PACKAGES_FILE" \

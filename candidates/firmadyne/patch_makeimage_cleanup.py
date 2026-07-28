@@ -11,7 +11,7 @@ dmsetup remove $(basename "$DEVICE") &>/dev/null
 
 new = '''echo "----Deleting device mapper----"
 
-# VERITAS compatibility fix:
+# FIRMARBITER compatibility fix:
 # DEVICE is a mapper partition such as /dev/mapper/loop18p1.
 # losetup requires the parent loop device, such as /dev/loop18.
 MAPPER_NAME="$(basename "${DEVICE}")"
