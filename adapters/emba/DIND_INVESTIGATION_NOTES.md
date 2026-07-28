@@ -80,3 +80,52 @@ NEXT SESSION:
    for the actual binary install commands and trace exactly what runs
 3. Check if PATH includes wherever pip/venv might install these tools
    (some Python-based unpackers install as pip packages, not system binaries)
+
+---
+
+## MAJOR CORRECTION: wrong architecture assumed for the entire build approach
+
+Confirmed via EMBA's own wiki (https://github.com/e-m-b-a/emba/wiki/Installation,
+https://github.com/e-m-b-a/emba/wiki/FAQ):
+
+"The standard Docker variant only requires Docker and cve-search to be
+installed on the HOST (sudo ./installer.sh -d) and EMBA will install
+everything else in the Docker container itself DURING ITS FIRST RUN."
+
+"WARNING: Do not use EMBA in developer mode (-D) as it can execute
+malicious code... and harm your host system!"
+
+This means:
+- -D is explicitly a DEVELOPER-ONLY mode, not a path to a complete image.
+  We used it in every build attempt tonight and in the prior session.
+- installer.sh -d is meant to run on the BARE HOST (not inside a Dockerfile
+  RUN step) — it installs Docker + cve-search on the host only.
+- The actual tool population (binwalk, unblob, etc.) happens LAZILY,
+  automatically, inside the running container on its first real analysis
+  invocation — NOT baked into the image at build time via installer.sh.
+
+This explains every finding from tonight's investigation:
+- binwalk/unblob/rev missing: never a bug, they were never supposed to be
+  present after a `docker build` — they install on first `emba` run
+- The DOCKER_SETUP/-D/-g flag conflicts: irrelevant, because -D was never
+  the right flag to be using for a Dockerfile RUN step in the first place
+- "Docker daemon not running" error under -s -g: I05_emba_docker_image_dl
+  tries to check/pull the real embeddedanalyzer/emba image, which requires
+  an actual running Docker daemon — something that doesn't exist inside a
+  `docker build` sandbox at all, confirming this install path was never
+  meant to run inside a Dockerfile build step.
+
+## Corrected next-session plan (NOT YET ATTEMPTED)
+1. Do NOT bake EMBA's tools into the image at build time via installer.sh.
+2. Build a MINIMAL Dockerfile: just clone EMBA + apply the 3 ARM64 patches
+   (sasquatch/libfuse2t64/uml-utilities still needed since those errors
+   were REAL, confirmed independently of the -D/-g confusion).
+3. Test whether tools genuinely self-install on first `emba -f ... -i`
+   invocation, inside a container, matching -d's documented lazy-install
+   behavior — this has NOT been tested yet, it's a real open question.
+4. If lazy install requires internet access at analysis-time (likely,
+   given it downloads binwalk/unblob), this has real implications for
+   the VERITAS adapter contract — a "run once per firmware sample" model
+   may need network access per-run, not just at build time. This is a
+   genuinely new architectural question for the adapter design, not
+   solved by anything tried so far.
