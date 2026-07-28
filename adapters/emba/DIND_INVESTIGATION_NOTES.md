@@ -47,3 +47,36 @@ run_unpack/run_emulate should invoke `emba` directly with `-i -F`
 requirement) — a materially simpler adapter than originally scoped.
 The privileged mode and /dev/fuse device access are still required
 (per docker-compose.yml), but the sibling-container complexity is gone.
+
+---
+
+## NEW FINDING (separate from DinD): binwalk/unblob/rev missing from final image
+
+Confirmed via direct check inside veritas-adapter-emba:0.1.0:
+    which binwalk unblob rev
+    -> all three return nothing (not installed / not on PATH)
+
+Consequence: EMBA's static extraction modules (P50_binwalk_extractor,
+P55_unblob_extractor, P60_deep_extractor) all produced empty output
+against two different real firmware samples (DIR-868L REVA and REVB),
+both reporting only "1 files and 2 directories detected" — consistent
+with extraction tools being absent, not a firmware-specific issue.
+
+Install log DOES show sasquatch and other IP61_unblob.sh dependencies
+being installed ("sasquatch will be newly installed") — so either:
+  (a) the actual binwalk/unblob binary install step is being skipped
+      by a condition we haven't traced (possibly related to -g/GH_ACTION,
+      since IP61_unblob.sh's condition checks LIST_DEP/IN_DOCKER/
+      DOCKER_SETUP/FULL, not GH_ACTION directly, so this needs verifying)
+  (b) the binaries install into a Python venv or path not on $PATH in
+      the final running container
+  (c) something in our patches/arm64-compat.patch inadvertently affects
+      this despite being scoped to architecture-hardcoding + -g only
+
+NEXT SESSION: 
+1. Rebuild WITHOUT -g flag (accept the slow CVE database step) and
+   recheck `which binwalk unblob` — isolates whether -g is the cause
+2. If still missing, grep installer/IP61_unblob.sh and IP99_binwalk_default.sh
+   for the actual binary install commands and trace exactly what runs
+3. Check if PATH includes wherever pip/venv might install these tools
+   (some Python-based unpackers install as pip packages, not system binaries)
