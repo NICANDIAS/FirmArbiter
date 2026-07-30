@@ -129,3 +129,60 @@ This explains every finding from tonight's investigation:
    may need network access per-run, not just at build time. This is a
    genuinely new architectural question for the adapter design, not
    solved by anything tried so far.
+
+---
+
+## FINAL RESOLUTION: use the official embeddedanalyzer/emba:2.0.2b image directly
+
+Confirmed via a full, successful real-firmware run (DIR-868L REVB, 13h05m
+total runtime under QEMU amd64-on-arm64 translation):
+
+- Do NOT build from source via installer.sh at all. Pull the maintainers'
+  own published image directly:
+      docker pull --platform linux/amd64 embeddedanalyzer/emba:2.0.2b
+  (35.9GB — matches EMBA's own documented disk sizing. No ARM64 manifest
+  exists, so --platform linux/amd64 is required; runs via QEMU translation,
+  same accepted tradeoff as fact_extractor.)
+
+- /emba is empty in this image too — EMBA's own script/module source must
+  still be mounted at runtime from a real host-side clone (matching
+  docker-compose.yml's own convention), NOT baked into this image.
+
+- Confirmed working invocation:
+    docker run --rm --privileged --device /dev/fuse \
+      --memory="5g" --memory-swap="6g" \
+      -v <host_emba_clone>:/emba:ro \
+      -v <firmware_dir>:/firmware_samples:ro \
+      -v <log_dir>:<log_dir> \
+      --entrypoint /bin/bash embeddedanalyzer/emba:2.0.2b \
+      -c "/emba/emba -l <log_dir> -f <firmware_path> \
+          -p /emba/scan-profiles/default-scan.emba -F -i"
+
+- CRITICAL: explicit --memory limit is required. Without one, EMBA's
+  static analysis (S13/S16/S17 in particular) can consume enough RAM to
+  trigger the HOST VM's OOM killer, not just the container's — this
+  crashed the entire VM once during testing, requiring a reboot. With
+  --memory="5g" set, only the container gets reaped if it exceeds the
+  cap, leaving the VM and other services (e.g. Wazuh) untouched.
+
+- Real timing: full default-scan.emba profile took ~13 hours against a
+  real router firmware (DIR-868L REVB) under QEMU translation. The two
+  slowest modules were S109_jtr_local_pw_cracking (~2h) and
+  S115_usermode_emulator (~1.5h). This MUST be documented as an accepted,
+  expected cost in adapter.yaml — not a bug, not something to optimize
+  away, consistent with the amd64-under-QEMU compute-cost caveat already
+  applied to FirmAE/FIRMADYNE.
+
+- Real extraction output path pattern (confirmed against real firmware):
+    firmware/binwalk_extracted/<firmware_filename>.extracted/0/
+      <inner_filename>.extracted/<hex_offset>/squashfs-root/
+  This path is NOT fixed/predictable (hex offset varies per firmware).
+  run_unpack must search recursively under firmware/binwalk_extracted/
+  for a directory matching common rootfs markers (e.g. containing both
+  an 'etc' and 'bin' subdirectory) rather than assume a fixed path.
+
+- Real result quality confirmed: 30 SBOM components identified with
+  versions, 4059 CVE entries matched (78 critical, 701 high), 140
+  possible exploits (11 Metasploit modules) — this image ships with a
+  populated CVE database already (unlike a from-scratch installer.sh
+  build), so F17_cve_bin_tool produces real, substantive results.
