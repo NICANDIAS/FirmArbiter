@@ -1,45 +1,55 @@
 id: emba
-version: 0.1.0
+version: 0.3.0
 contract_version: "1.0"
 
 candidate:
   name: "EMBA - Embedded Linux Analyzer"
   source_repo: "https://github.com/e-m-b-a/emba"
   pinned_commit: "5496d5c0782190f6dfad7cfd598d5826a1b4d620"
-  # NOTE: EMBA's own documentation states it is designed for x86-64 and is
-  # not tested on ARM. Four ARM64-specific installer bugs were found and
-  # fixed to get a working build on this ARM64 dev host — see patches/.
-  # Final paper measurements should still be taken on native amd64 hardware,
-  # consistent with the FirmAE/FIRMADYNE compute-cost caveat.
+  # NOTE: upstream officially supports/tests only x86-64. This adapter
+  # runs the official maintainer-built image (embeddedanalyzer/emba:2.0.2b)
+  # under QEMU amd64-on-arm64 translation on ARM64 hosts — same accepted
+  # tradeoff as FirmAE, FIRMADYNE, fact_extractor. Confirmed working via a
+  # full real-firmware run; see DIND_INVESTIGATION_NOTES.md for the full
+  # investigation.
 
 build:
   dockerfile: Dockerfile
   base_images:
-    - "kalilinux/kali-rolling@sha256:776d57c9d607faafef9957073b0b5a05b0d1115e5728777a8fc5588827cfd249"
-  # CVE database population was skipped at build time via EMBA's own -g
-  # (GH_ACTION) flag, since it depends on unreliable multi-source network
-  # fetches (NVD, GitLab, RedHat, OSV) unsuited to a reproducible build.
-  # This means EMBA's own CVE-lookup modules will run without a populated
-  # database until one is supplied separately post-build.
+    - "embeddedanalyzer/emba:2.0.2b@sha256:db3d2023e842d1cc1f7a5645608f4c3fcb49daacc1a514a1b83a78d3a0465e53"
+  # Base image is the OFFICIAL, maintainer-published, fully-populated
+  # EMBA image (35.9GB) — NOT built from source via installer.sh. Two
+  # full sessions attempting a from-scratch build via installer.sh hit
+  # repeated flag conflicts (DOCKER_SETUP/-D/-g) that silently skipped
+  # installing binwalk/unblob. Building from the official image instead
+  # sidesteps this entirely. EMBA's own script/module source (pinned
+  # commit above) is cloned fresh into the image at build time.
 
 runtime:
-  platform: "linux/arm64"  # built and verified on this host; EMBA upstream
-                            # only officially supports/tests linux/amd64
-  network_mode: "bridge"   # EMBA's docker-compose.yml does not set
-                            # network_mode on the main service (only the
-                            # read-only "emba_quest" variant uses host mode)
-  privileged: true          # required by EMBA's own docker-compose.yml for
-                            # loop-mount/fuse-based extraction and dynamic
-                            # analysis; same class of requirement as
-                            # FIRMADYNE's loop-device and FirmAE's TAP
-                            # networking needs (see Finding F19 precedent)
+  platform: "linux/amd64"  # no ARM64 manifest published upstream
+  network_mode: "none"
+  privileged: true
   devices:
     - "/dev/fuse:/dev/fuse:rwm"
+  # CRITICAL: an explicit memory limit is REQUIRED, not optional. An
+  # uncapped EMBA run was confirmed to consume enough RAM to trigger the
+  # HOST machine's OOM killer (not just the container's), crashing
+  # unrelated services running on the same host. Recommended minimum:
+  # 5GB container memory cap. The coordinator/runner invoking this
+  # adapter must pass an equivalent Docker memory limit.
+  memory_limit_gb: 5
+  # CRITICAL: expect LONG runtimes. Confirmed real timing: ~13 hours for
+  # one firmware sample (DIR-868L REVB) under QEMU translation, using
+  # EMBA's default-scan.emba profile. The two slowest individual modules
+  # were S109_jtr_local_pw_cracking (~2h) and S115_usermode_emulator
+  # (~1.5h). Any timeout configured for this adapter must be generous
+  # (recommend 50000+ seconds) or runs will be killed as false failures.
 
 capabilities:
   unpack: true
-  emulate: true   # via a separate scan profile (default-scan-emulation.emba);
-                   # the default profile (default-scan.emba) is static-analysis
-                   # only — v0.1.0 targets static analysis first
-  endpoint_discovery: false  # not applicable to v0.1.0's static-only scope
+  emulate: false  # limited per-binary emulation happens INSIDE the single
+                   # full-scan run (S115_usermode_emulator), not as an
+                   # independently triggerable stage in this adapter version
+  endpoint_discovery: false  # static scan only, firmware is never booted
+                               # into a live/reachable state
   reports_own_endpoint_claims: false

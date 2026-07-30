@@ -46,24 +46,123 @@ REQUEST_PATH = "/firmarbiter/input/request.json"
 # ---------------------------------------------------------------------
 
 def run_unpack(request, event_writer):
-    """Extract the firmware. Must leave the rootfs at
-    <artifacts_path>/unpack/rootfs/ — FIRMARBITER measures unpack success by
-    inspecting that path directly, not by trusting this return value."""
-    raise NotImplementedError("Fill in run_unpack for your tool")
+    """
+    Run EMBA's default-scan.emba profile against the firmware, then locate
+    the real extracted rootfs and copy it to the contract-required path.
+
+    IMPORTANT — confirmed via a full real run (DIR-868L REVB, ~13 hours
+    under QEMU amd64-on-arm64 translation, see DIND_INVESTIGATION_NOTES.md):
+
+    - EMBA runs its ENTIRE scan (unpack + all static analysis modules) in
+      one invocation — there is no separate "just unpack" mode in the
+      default-scan.emba profile. So this function does the full EMBA run;
+      run_emulate/run_endpoint_discovery below just report on what EMBA
+      already did, rather than triggering separate stages.
+    - This is SLOW. Real confirmed runtime: ~13 hours for one firmware
+      sample under QEMU translation. This must be reflected in whatever
+      timeout the calling coordinator uses — do not assume a short-lived
+      process.
+    - The real extracted rootfs lands at an unpredictable nested path:
+        firmware/binwalk_extracted/<file>.extracted/0/<inner>.extracted/<hex_offset>/squashfs-root/
+      The hex offset varies per firmware sample, so we search recursively
+      for a directory containing markers of a real Linux rootfs (both an
+      'etc' and a 'bin' subdirectory) rather than assume a fixed path.
+    - Must run with an explicit memory cap (handled by the caller/adapter
+      contract's resource limits, not inside this function) — an
+      uncapped EMBA run was confirmed to trigger the HOST machine's OOM
+      killer, not just the container's, during real testing.
+    """
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    firmware_path = Path(request.firmware.path)
+    artifacts_path = Path(request.paths.artifacts)
+
+    log_dir = artifacts_path / "unpack" / "_emba_run"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = subprocess.run(
+            [
+                "/emba/emba",
+                "-l", str(log_dir),
+                "-f", str(firmware_path),
+                "-p", "/emba/scan-profiles/default-scan.emba",
+                "-F",  # bypass dependency-check gate (confirmed necessary)
+                "-i",  # IN_DOCKER=1 + USE_DOCKER=0 — run in-place, no
+                       # sibling-container spawn (see DIND_INVESTIGATION_NOTES.md)
+            ],
+            capture_output=True, text=True,
+            timeout=request.lifecycle.boot_wait_timeout_seconds
+            if hasattr(request.lifecycle, "boot_wait_timeout_seconds") else 50000,
+        )
+    except subprocess.TimeoutExpired:
+        return "failed", (
+            "EMBA timed out. Real confirmed runtime is ~13 hours under QEMU "
+            "translation for a full default-scan.emba pass — verify the "
+            "configured timeout accounts for this before treating as a "
+            "genuine failure."
+        )
+
+    # Search for the real extracted rootfs — path depth/naming is not
+    # fixed (binwalk names nested dirs by hex offset), so search by
+    # content markers instead of a hardcoded path.
+    binwalk_root = log_dir / "firmware" / "binwalk_extracted"
+    found_rootfs = None
+    if binwalk_root.exists():
+        for candidate in binwalk_root.rglob("*"):
+            if candidate.is_dir() and (candidate / "etc").is_dir() and (candidate / "bin").is_dir():
+                found_rootfs = candidate
+                break
+
+    if found_rootfs is None:
+        return "failed", (
+            f"EMBA ran (exit code {result.returncode}) but no directory "
+            f"matching rootfs markers (etc/ + bin/) was found under "
+            f"{binwalk_root}. stderr: {result.stderr[-500:]}"
+        )
+
+    rootfs_dir = artifacts_path / "unpack" / "rootfs"
+    if rootfs_dir.exists():
+        shutil.rmtree(rootfs_dir)
+    shutil.copytree(found_rootfs, rootfs_dir)
+
+    file_count = sum(1 for _ in rootfs_dir.rglob("*") if _.is_file())
+
+    return "completed", (
+        f"EMBA full scan completed, extracted rootfs found at "
+        f"{found_rootfs.relative_to(log_dir)} with {file_count} files "
+        f"copied to unpack/rootfs/. Full analysis artifacts (SBOM, CVE "
+        f"matches, per-binary reports) remain in {log_dir} for reference."
+    )
 
 
 def run_emulate(request, event_writer):
-    """Boot/emulate the firmware, if your tool does this. Return
-    ('not_applicable', '...') if your tool is static-analysis only."""
-    raise NotImplementedError("Fill in run_emulate for your tool")
+    """default-scan.emba is static-analysis only. EMBA does have dynamic/
+    emulation capability (S115_usermode_emulator, and a separate
+    default-scan-emulation.emba profile), but that ran as PART of
+    run_unpack's single full-scan invocation above — there is no separate
+    boot/emulate stage to trigger independently in this adapter version."""
+    return "not_applicable", (
+        "This adapter (v0.1.0) uses EMBA's default-scan.emba profile, which "
+        "is static-analysis only. EMBA's own S115_usermode_emulator module "
+        "does perform limited per-binary emulation, but as part of the "
+        "single full-scan run in run_unpack, not as an independently "
+        "triggerable stage."
+    )
 
 
 def run_endpoint_discovery(request, event_writer):
-    """Report any endpoints your tool's own instrumentation finds.
-    Note: FIRMARBITER's neutral probe independently verifies reachability —
-    this stage is about your tool's *claims*, not the verified result.
-    Return ('not_applicable', '...') if not relevant to your tool."""
-    raise NotImplementedError("Fill in run_endpoint_discovery for your tool")
+    """EMBA's default-scan.emba profile does not boot the firmware into a
+    running state, so it cannot claim any live network endpoints —
+    S75_network_check inspects config files for network references
+    statically, it does not verify anything is actually reachable."""
+    return "not_applicable", (
+        "EMBA's static scan profile does not boot the firmware, so it "
+        "cannot claim live endpoints. S75_network_check reports network "
+        "configuration found in files, not verified running services."
+    )
 
 
 # ---------------------------------------------------------------------
