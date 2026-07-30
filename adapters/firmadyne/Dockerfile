@@ -7,7 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99firmarbiter && \
-    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/99firmarbiter
+    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/99firmarbiter && \
+    echo 'Acquire::Check-Date "false";' >> /etc/apt/apt.conf.d/99firmarbiter
 
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \

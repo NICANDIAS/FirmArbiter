@@ -43,3 +43,12 @@ capabilities:
   # service on X") will be recorded as candidate_claims, but never
   # substituted for VERITAS's own independent measurement.
   reports_own_endpoint_claims: true
+
+# NOTE ON APT-BASED BUILDS: if your candidate's Dockerfile is based on
+# Debian/Ubuntu/Kali and runs `apt-get update`, you may hit a real,
+# recurring transient issue on this dev environment where mirror
+# Release files are future-dated relative to actual UTC time (confirmed
+# independently on both Kali and Ubuntu mirrors — not something wrong
+# in this codebase). If you see "Release file ... is not valid yet",
+# add this line before any apt-get commands in your Dockerfile:
+#     RUN echo 'Acquire::Check-Date "false";' > /etc/apt/apt.conf.d/99no-check-date

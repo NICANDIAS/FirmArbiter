@@ -20,6 +20,8 @@ COPY dependencies/apt-direct.txt \
 COPY scripts/install_apt_dependencies.sh \
     /usr/local/bin/firmarbiter-install-firmae-dependencies
 
+RUN echo 'Acquire::Check-Date "false";' > /etc/apt/apt.conf.d/99no-check-date
+
 RUN chmod 0755 \
         /usr/local/bin/firmarbiter-install-firmae-dependencies \
     && /usr/local/bin/firmarbiter-install-firmae-dependencies \
