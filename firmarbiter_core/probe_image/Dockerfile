@@ -2,6 +2,7 @@ FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+RUN echo 'Acquire::Check-Date "false";' > /etc/apt/apt.conf.d/99no-check-date
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
