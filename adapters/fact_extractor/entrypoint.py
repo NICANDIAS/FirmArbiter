@@ -34,7 +34,7 @@ from lifecycle import (
     ShutdownCoordinator,
 )
 
-SCHEMA_PATH = "/firmarbiter/schemas/adapter-event-v1.schema.json"
+SCHEMA_PATH = "/firmarbiter_adapter/schemas/adapter-event-v1.schema.json"  # baked into image at build time — see Dockerfile
 REQUEST_PATH = "/firmarbiter/input/request.json"
 
 

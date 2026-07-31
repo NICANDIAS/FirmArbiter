@@ -30,5 +30,12 @@ RUN apt-get update -o Acquire::Check-Date=false 2>/dev/null; \
 WORKDIR /firmarbiter_adapter
 COPY lifecycle/ ./lifecycle/
 COPY entrypoint.py ./entrypoint.py
+# The Adapter Contract's runtime paths (see request.json's "paths" key)
+# never include a schema mount — confirmed by inspecting
+# run_coordinator.py directly, not assumed. In-container event
+# validation is a real SDK safety feature (a malformed event should
+# never even reach disk), so the schema must be baked into the image
+# at build time instead, same as lifecycle/ and entrypoint.py above.
+COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
 
 ENTRYPOINT ["python3", "/firmarbiter_adapter/entrypoint.py"]
