@@ -3,46 +3,96 @@
 # Copy this to adapters/<your_tool>/adapter.yaml and fill in every field.
 # The coordinator discovers adapters automatically by scanning for this
 # file — no separate registration step, so accuracy here matters.
+#
+# This file's structure is validated against
+# schemas/adapter-manifest-v1.schema.json. Run
+#     python3 run_firmarbiter.py --list-candidates
+# after filling this in to confirm it validates before doing anything else —
+# this was NOT true of an earlier version of this template (see git history:
+# "Fix EMBA and fact_extractor adapter.yaml to match the real, enforced
+# manifest schema"), so don't assume this file is correct just because it
+# looks plausible — actually run the validator.
 
-id: your-tool                      # short, filesystem-safe, matches directory name
-version: 0.1.0                     # your adapter's version, not the candidate tool's
-contract_version: "1.0"            # Adapter Contract version this adapter implements — must match schema
+schema_version: '1.0'
+
+adapter:
+  id: your-tool                      # short, filesystem-safe, matches directory name,
+                                       # pattern: ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
+  display_name: "Your Tool Adapter"
+  description: "FIRMARBITER adapter for Your Tool — one or two sentences on what it does and how this adapter wraps it."
+  version: 0.1.0                     # your adapter's version, not the candidate tool's
+  contract_version: "1.0"            # Adapter Contract version this adapter implements — must match schema
 
 candidate:
   name: "Your Tool Name"
-  # Pin an exact upstream commit/release, never a moving branch —
-  # this is what makes a VERITAS run reproducible.
-  source_repo: "https://github.com/example/your-tool"
-  pinned_commit: "REPLACE_WITH_FULL_COMMIT_SHA"
+  source:
+    type: git
+    # Pin an exact upstream commit, never a moving branch — this is what
+    # makes a FIRMARBITER run reproducible.
+    repository: "https://github.com/example/your-tool.git"
+    commit: "REPLACE_WITH_FULL_40_CHAR_COMMIT_SHA"
+    # requested_ref: master   # optional, for human-readability only —
+                                # commit above is what's actually used
+  # patches:                  # optional, only if you needed to patch the
+                                # candidate's own source (see adapters/firmae
+                                # or adapters/emba for real examples)
+  # - path: patches/0001-example.patch
+  #   sha256: "REPLACE_WITH_SHA256_OF_THE_PATCH_FILE"
+  #   description: "What this patch fixes and why."
 
 build:
+  context: .
   dockerfile: Dockerfile
-  # Pin base images by digest, not just tag — tags can be repointed.
-  # FIRMADYNE hit real breakage from this; do not skip it.
-  base_images:
-    - "ubuntu:22.04@sha256:REPLACE_WITH_DIGEST"
-
-runtime:
   # Does this tool's image only exist for amd64? If so QEMU translation
   # applies on ARM64 hosts — expect slower runs, and note in your paper
   # that dev-host compute-cost numbers are not final performance numbers.
-  platform: "linux/amd64"
-  # Network mode your container needs. "none" is the default VERITAS
+  platform: "linux/amd64"   # one of: linux/amd64, linux/arm64, linux/386, linux/arm/v7
+  base_images:
+    # Pin EVERY base image by full sha256 digest, not just a tag — tags
+    # can be repointed. FIRMADYNE hit real breakage from this; do not
+    # skip it. Get the real digest with:
+    #     docker inspect <image>:<tag> --format '{{index .RepoDigests 0}}'
+    - "ubuntu:22.04@sha256:REPLACE_WITH_REAL_DIGEST"
+
+runtime:
+  run_as_root: true    # most firmware-analysis tools need root inside
+                         # their own container (loop devices, fuse, etc.)
+  # Network mode your container needs. "none" is the default FIRMARBITER
   # sandboxing preference; only relax this if the tool cannot function
   # otherwise, and document why (see Finding F19 for the tradeoffs this creates).
-  network_mode: "none"
+  network: "none"   # one of: none, isolated, host
+  requirements:
+    # Only include what you've actually confirmed the tool needs — this
+    # list is enforced, not decorative. Valid values:
+    #   kvm, loop-devices, device-mapper, tun-tap, net-admin, ptrace,
+    #   nested-containers, full-privileged
+    - full-privileged
 
 capabilities:
   # Declare what this tool actually does — a static analysis tool like
-  # EMBA would set emulate/endpoint_discovery to false.
-  unpack: true
-  emulate: true
-  endpoint_discovery: true
-
-  # If true, this tool's own claims about what it found (e.g. "found web
-  # service on X") will be recorded as candidate_claims, but never
-  # substituted for VERITAS's own independent measurement.
-  reports_own_endpoint_claims: true
+  # EMBA's default profile would omit "emulate" and "endpoint-discovery".
+  stages:
+    - unpack
+    - emulate
+    - endpoint-discovery
+  firmware_architectures:
+    # Which architectures has this adapter actually been tested against?
+    # Valid values: arm, arm64, mips, mipsel, x86, x86_64, powerpc, unknown
+    - arm
+    - mips
+  endpoint_protocols:
+    # Which protocols can this tool's OWN instrumentation claim to detect?
+    # (FIRMARBITER's neutral probe verifies independently regardless —
+    # this is about what the candidate itself reports.)
+    # Valid values: tcp, udp, http, https, ssh, telnet, other
+    - http
+  hints:
+    # For each of these, is architecture/vendor detection:
+    #   "required"  — the tool cannot function without it
+    #   "optional"  — the tool uses it if available but works without it
+    #   "unsupported" — the tool has no concept of this at all
+    architecture: optional
+    vendor: optional
 
 # NOTE ON APT-BASED BUILDS: if your candidate's Dockerfile is based on
 # Debian/Ubuntu/Kali and runs `apt-get update`, you may hit a real,
