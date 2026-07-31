@@ -127,8 +127,16 @@ class AdapterEventStream:
             "outcome": "adapter_stopped",
             "stage": "stage_completed",
             "stage_outcome": "stage_completed",
-            "message": "stage_completed",
         }
+        # NOTE: 'message' deliberately excluded from this table. Confirmed
+        # via direct inspection of schemas/adapter-event-v1.schema.json:
+        # 'message' is a plain top-level property (lines ~159-163), usable
+        # on ANY event. The schema's if/then block only adds a REQUIREMENT
+        # that stage_completed must include message — it does not restrict
+        # message to that event exclusively. This code previously treated
+        # "required for" as "exclusive to", incorrectly rejecting message
+        # on adapter_started/shutdown_started/cleanup_complete, which every
+        # adapter (via the shared lifecycle/events.py) legitimately sends.
 
         for field_name, permitted_event in event_specific_fields.items():
             if (
