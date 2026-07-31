@@ -1,42 +1,43 @@
-id: fact-extractor
-version: 0.1.0
-contract_version: "1.0"
-
+schema_version: '1.0'
+adapter:
+  id: fact-extractor
+  display_name: FACT Extractor Adapter
+  description: FIRMARBITER adapter wrapping fact_extractor (fkiecad/fact_extractor), a raw binary carver — NOT a filesystem-aware unpacker like FirmAE/FIRMADYNE. Launches the candidate as a sibling container via a mounted Docker socket.
+  version: 0.1.0
+  contract_version: '1.0'
 candidate:
-  name: "FACT extractor (fkiecad/fact_extractor)"
-  source_repo: "https://github.com/fkie-cad/fact_extractor"
-  pinned_commit: "master"  # TODO: pin to exact commit SHA before final experiments
-  # NOTE: this is a raw binary carver (offset/type-based chunk extraction),
-  # NOT a filesystem-aware unpacker like FirmAE/FIRMADYNE. Its "unpack
-  # success" claim is semantically weaker — see entrypoint.py's run_unpack
-  # docstring for the full distinction. Do not treat its results as
-  # equivalent to a bootable filesystem extraction in paper comparisons.
-
+  name: FACT extractor
+  source:
+    type: git
+    repository: https://github.com/fkie-cad/fact_extractor.git
+    commit: 'a98a562371fa534c9174e8c9268c1c310bdffb2e'
+    requested_ref: master
 build:
-  dockerfile: null  # uses the published fkiecad/fact_extractor image directly,
-                      # no local build required
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
   base_images:
-    - "fkiecad/fact_extractor:latest"  # amd64-only; runs via QEMU translation
-                                          # on this ARM64 host (same accepted
-                                          # pattern as FirmAE/FIRMADYNE)
-
+  - python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
+  - fkiecad/fact_extractor@sha256:00ba73280f4744ba3ad3c1d7debd4476b80d95bd2df12c70afb73523385ca9ba
 runtime:
-  platform: "linux/amd64"  # upstream image is amd64-only
-  network_mode: "none"
-  privileged: true   # required per fact_extractor's own documented usage
-  devices:
-    - "/dev:/dev"
-  # fact_extractor runs as a SIBLING container launched via a mounted
-  # Docker socket from this adapter's own entrypoint container — same
-  # identical-host-path mount requirement discovered onboarding EMBA.
-  # This adapter's own container needs /var/run/docker.sock mounted,
-  # and must itself be launched with host paths matching real host
-  # paths (not container-remapped aliases) for the sibling container's
-  # bind mounts to resolve correctly.
-  requires_docker_socket: true
-
+  run_as_root: true
+  network: none
+  requirements:
+  - nested-containers
+  - full-privileged
 capabilities:
-  unpack: true
-  emulate: false
-  endpoint_discovery: false
-  reports_own_endpoint_claims: false
+  stages:
+  - unpack
+  firmware_architectures:
+  - arm
+  - arm64
+  - mips
+  - mipsel
+  - x86
+  - x86_64
+  - powerpc
+  - unknown
+  endpoint_protocols: []
+  hints:
+    architecture: optional
+    vendor: optional
