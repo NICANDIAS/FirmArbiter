@@ -45,7 +45,7 @@ REQUEST_PATH = "/firmarbiter/input/request.json"
 # (confirm exact allowed values against the schema before onboarding).
 # ---------------------------------------------------------------------
 
-def run_unpack(request, event_writer):
+def run_unpack(request, event_writer, shutdown=None):
     """
     Run EMBA's default-scan.emba profile against the firmware, then locate
     the real extracted rootfs and copy it to the contract-required path.
@@ -82,28 +82,87 @@ def run_unpack(request, event_writer):
     log_dir = artifacts_path / "unpack" / "_emba_run"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        result = subprocess.run(
-            [
-                "/emba/emba",
-                "-l", str(log_dir),
-                "-f", str(firmware_path),
-                "-p", "/emba/scan-profiles/default-scan.emba",
-                "-F",  # bypass dependency-check gate (confirmed necessary)
-                "-i",  # IN_DOCKER=1 + USE_DOCKER=0 — run in-place, no
-                       # sibling-container spawn (see DIND_INVESTIGATION_NOTES.md)
-            ],
-            capture_output=True, text=True,
-            timeout=request.lifecycle.boot_wait_timeout_seconds
-            if hasattr(request.lifecycle, "boot_wait_timeout_seconds") else 50000,
-        )
-    except subprocess.TimeoutExpired:
+    # IMPORTANT (confirmed via manual, isolated testing — see
+    # GRACEFUL_SHUTDOWN_INVESTIGATION.md): a plain blocking subprocess.run()
+    # here makes the adapter completely unresponsive to SIGTERM/shutdown
+    # requests for the entire ~13-hour scan duration, since the main
+    # thread cannot act on the shutdown flag while blocked inside the
+    # call, AND the real EMBA subprocess is never actually terminated by
+    # a signal sent to this Python process alone. Confirmed via direct
+    # test: docker kill --signal=SIGTERM had zero effect after 20+
+    # seconds, with real EMBA child processes still consuming CPU.
+    #
+    # Fix: launch via Popen in its own process group, then poll in a loop
+    # that checks BOTH process completion and the shutdown flag, so a
+    # shutdown request can actually kill the real work promptly instead
+    # of being silently ignored for hours.
+    import os
+    import signal as signal_module
+
+    proc = subprocess.Popen(
+        [
+            "/emba/emba",
+            "-l", str(log_dir),
+            "-f", str(firmware_path),
+            "-p", "/emba/scan-profiles/default-scan.emba",
+            "-F",
+            "-i",
+        ],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        start_new_session=True,  # own process group, so we can kill EMBA's
+                                    # many child workers together, not just
+                                    # this one immediate child
+    )
+
+    poll_interval_seconds = 5
+    max_wait_seconds = 50000  # generous safety net; real confirmed runtime ~13h
+    elapsed = 0
+    was_shutdown_requested = False
+
+    while True:
+        try:
+            proc.wait(timeout=poll_interval_seconds)
+            break  # process finished naturally
+        except subprocess.TimeoutExpired:
+            elapsed += poll_interval_seconds
+            if shutdown is not None and shutdown.shutdown_requested():
+                was_shutdown_requested = True
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal_module.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    proc.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal_module.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                break
+            if elapsed >= max_wait_seconds:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal_module.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                return "failed", (
+                    f"EMBA exceeded the {max_wait_seconds}s safety-net timeout "
+                    f"and was killed."
+                )
+
+    if was_shutdown_requested:
         return "failed", (
-            "EMBA timed out. Real confirmed runtime is ~13 hours under QEMU "
-            "translation for a full default-scan.emba pass — verify the "
-            "configured timeout accounts for this before treating as a "
-            "genuine failure."
+            "EMBA was terminated early because the coordinator requested "
+            "shutdown before the scan completed naturally."
         )
+
+    stdout, stderr = proc.communicate()
+
+    class _Result:
+        pass
+    result = _Result()
+    result.returncode = proc.returncode
+    result.stdout = stdout
+    result.stderr = stderr
 
     # Search for the real extracted rootfs — path depth/naming is not
     # fixed (binwalk names nested dirs by hex offset), so search by
@@ -195,11 +254,11 @@ def main():
         contract_version=request.contract_version,
     )
 
-    current_stage_holder = {"stage": None}
+    current_state_holder = {"state": "starting"}  # one of: starting, running, waiting_for_shutdown, shutting_down (schema-enforced enum)
     heartbeat = HeartbeatWorker(
         event_writer,
         interval_seconds=request.lifecycle.heartbeat_interval_seconds,
-        state_provider=lambda: current_stage_holder["stage"],
+        state_provider=lambda: current_state_holder["state"],
     )
 
     shutdown = ShutdownCoordinator(control_dir=request.paths.control)
@@ -213,7 +272,7 @@ def main():
             if shutdown.shutdown_requested():
                 break  # coordinator asked us to stop early
 
-            current_stage_holder["stage"] = stage
+            current_state_holder["state"] = "running"
             fn = STAGE_FUNCTIONS.get(stage)
             if fn is None:
                 event_writer.error(
@@ -225,7 +284,12 @@ def main():
                 continue
 
             try:
-                stage_outcome, message = fn(request, event_writer)
+                import inspect
+                fn_params = inspect.signature(fn).parameters
+                if "shutdown" in fn_params:
+                    stage_outcome, message = fn(request, event_writer, shutdown=shutdown)
+                else:
+                    stage_outcome, message = fn(request, event_writer)
             except NotImplementedError as e:
                 event_writer.error(
                     code="STAGE_NOT_IMPLEMENTED",
@@ -260,6 +324,7 @@ def main():
 
         # Wait for the coordinator's explicit shutdown signal before tearing
         # down, honouring shutdown_grace_seconds from the request.
+        current_state_holder["state"] = "waiting_for_shutdown"
         shutdown.wait_for_shutdown(timeout=request.lifecycle.shutdown_grace_seconds)
 
         event_writer.shutdown_started(message="Shutdown requested or stages complete")

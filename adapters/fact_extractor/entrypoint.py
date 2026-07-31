@@ -196,11 +196,11 @@ def main():
         contract_version=request.contract_version,
     )
 
-    current_stage_holder = {"stage": None}
+    current_state_holder = {"state": "starting"}  # one of: starting, running, waiting_for_shutdown, shutting_down (schema-enforced enum)
     heartbeat = HeartbeatWorker(
         event_writer,
         interval_seconds=request.lifecycle.heartbeat_interval_seconds,
-        state_provider=lambda: current_stage_holder["stage"],
+        state_provider=lambda: current_state_holder["state"],
     )
 
     shutdown = ShutdownCoordinator(control_dir=request.paths.control)
@@ -214,7 +214,7 @@ def main():
             if shutdown.shutdown_requested():
                 break  # coordinator asked us to stop early
 
-            current_stage_holder["stage"] = stage
+            current_state_holder["state"] = "running"
             fn = STAGE_FUNCTIONS.get(stage)
             if fn is None:
                 event_writer.error(
@@ -261,6 +261,7 @@ def main():
 
         # Wait for the coordinator's explicit shutdown signal before tearing
         # down, honouring shutdown_grace_seconds from the request.
+        current_state_holder["state"] = "waiting_for_shutdown"
         shutdown.wait_for_shutdown(timeout=request.lifecycle.shutdown_grace_seconds)
 
         event_writer.shutdown_started(message="Shutdown requested or stages complete")
