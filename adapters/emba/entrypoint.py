@@ -115,7 +115,19 @@ def run_unpack(request, event_writer, shutdown=None):
     )
 
     poll_interval_seconds = 5
-    max_wait_seconds = 50000  # generous safety net; real confirmed runtime ~13h
+    # No internal timeout here by design: request.py's recognized lifecycle
+    # fields (heartbeat_interval_seconds, heartbeat_timeout_seconds,
+    # boot_wait_timeout_seconds, endpoint_wait_timeout_seconds) do NOT
+    # include the overall experiment timeout — that value is intentionally
+    # kept external, enforced only by the coordinator's own
+    # lifecycle_watchdog.py via SIGTERM. A prior hardcoded internal value
+    # here (50000s) silently raced against and undercut the real
+    # coordinator-configured timeout, causing a run to be killed early by
+    # US, not by the coordinator, corrupting the result. Set generously
+    # high purely as a last-resort safety valve against a truly stuck
+    # process — this should essentially never fire before the coordinator's
+    # own SIGTERM does.
+    max_wait_seconds = 172800  # 48h absolute last-resort only
     elapsed = 0
     was_shutdown_requested = False
 
