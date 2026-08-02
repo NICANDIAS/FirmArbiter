@@ -562,6 +562,29 @@ def stage_emulate(
         cwd=str(FIRMADYNE_HOME),
         env=env,
     )
+    # CRITICAL: FirmArbiter's independent boot verification
+    # (firmarbiter_core/probes/boot_validation.py) requires a real
+    # artifacts/boot/guest-console.log file containing genuine QEMU
+    # serial console output (kernel + userspace boot markers) — without
+    # it, boot is always reported "inconclusive" regardless of whether
+    # the firmware actually booted. Confirmed via a real run: qemu_proc's
+    # stdout was captured via PIPE but never read anywhere, so this file
+    # was never created. Start a background thread to tee the output in
+    # real time, matching the same pattern FirmAE already uses correctly.
+    console_log_path = artifacts_path / "boot" / "guest-console.log"
+    console_log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _tee_console_output():
+        try:
+            with console_log_path.open("a", encoding="utf-8") as f:
+                for line in qemu_proc.stdout:
+                    f.write(line)
+                    f.flush()
+        except Exception:
+            pass
+
+    console_thread = threading.Thread(target=_tee_console_output, daemon=True)
+    console_thread.start()
 
     # Detect network mode from run.sh content
     socket_mode = "netdev socket" in run_sh_text or "listen=:" in run_sh_text
