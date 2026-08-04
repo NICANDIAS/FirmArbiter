@@ -23,6 +23,7 @@ HOW TO USE THIS TEMPLATE:
 """
 
 import sys
+import threading
 import traceback
 from pathlib import Path
 
@@ -113,6 +114,33 @@ def run_unpack(request, event_writer, shutdown=None):
                                     # many child workers together, not just
                                     # this one immediate child
     )
+    # CRITICAL: EMBA produces substantial verbose stdout/stderr output.
+    # subprocess.PIPE has a small OS buffer (~64KB) — once full, the
+    # child process BLOCKS on write() until something reads the pipe.
+    # Confirmed via direct reproduction: a real 24-hour run hung
+    # indefinitely on the very first module (P02_firmware_bin_file_check,
+    # which normally takes ~20s) because nothing ever read proc.stdout/
+    # proc.stderr — the poll loop only called proc.wait(), never drained
+    # the pipes. Heartbeats kept flowing (separate thread, unaffected),
+    # creating a false impression of live progress while the real work
+    # was silently deadlocked. Same root-cause class as the FIRMADYNE
+    # guest-console.log gap fixed earlier — undrained subprocess output.
+    stdout_log_path = log_dir.parent / "emba_stdout.log"
+    stderr_log_path = log_dir.parent / "emba_stderr.log"
+
+    def _drain(stream, path):
+        try:
+            with path.open("w", encoding="utf-8") as f:
+                for line in stream:
+                    f.write(line)
+                    f.flush()
+        except Exception:
+            pass
+
+    stdout_thread = threading.Thread(target=_drain, args=(proc.stdout, stdout_log_path), daemon=True)
+    stderr_thread = threading.Thread(target=_drain, args=(proc.stderr, stderr_log_path), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
 
     poll_interval_seconds = 5
     # No internal timeout here by design: request.py's recognized lifecycle
