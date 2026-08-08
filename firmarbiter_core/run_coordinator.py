@@ -74,7 +74,23 @@ class RunPolicy:
     boot_wait_timeout_seconds: float = 900.0
 
     cpu_cores: float = 4.0
-    memory_bytes: int = 8589934592
+    # CRITICAL: default was previously 8589934592 (exactly 8 GiB) — equal to or
+    # greater than this host's total RAM (7.2 GiB), meaning Docker's --memory
+    # flag provided no real protection at all: the kernel OOM-killer had no
+    # early warning before the entire VM crashed. Confirmed via a real
+    # incident: an EMBA run (Ghidra decompilation stage specifically) was
+    # repeatedly OOM-killed and respawned for ~2 hours straight before taking
+    # the whole host down, losing ~4 days of unattended runtime. Lowered to
+    # 5 GiB, the same value already manually verified safe on this host in
+    # an earlier successful EMBA run, leaving real headroom for the host OS
+    # and other running containers (Wazuh's 3 containers, ~2GB combined).
+    # Lowered again from 5 GiB to 4 GiB after confirming the real available
+    # headroom on this host: Wazuh's 3 containers alone measured ~1.9GB
+    # combined (indexer ~1.3GB, manager ~415MB, dashboard ~216MB) running
+    # concurrently. 5 GiB + ~1.9GB Wazuh left only ~300MB for the host OS
+    # and kernel on a 7.2GB-total VM — too tight for an unattended
+    # multi-day run. 4 GiB leaves ~1.3GB genuine headroom instead.
+    memory_bytes: int = 4294967296
     pids_limit: int = 4096
 
     endpoint_wait_timeout_seconds: float = 300.0
