@@ -454,6 +454,7 @@ def stage_emulate(
     env: dict[str, str],
     boot_wait_timeout: float,
     stage_start: float,
+    shutdown_event: "threading.Event | None" = None,
 ) -> tuple[bool, str, subprocess.Popen | None]:
     """Stages 3-6: tar2db, makeImage, inferNetwork, launch QEMU."""
 
@@ -594,6 +595,9 @@ def stage_emulate(
         # Confirm QEMU stays alive for at least 10 seconds.
         print("[FIRMARBITER][firmadyne] Socket-mode networking detected — waiting for QEMU stability", flush=True)
         for _i in range(10):
+            if shutdown_event is not None and shutdown_event.is_set():
+                print("[FIRMARBITER][firmadyne] shutdown requested during socket-mode stability wait", flush=True)
+                break
             if qemu_proc.poll() is not None:
                 raise AdapterOperationalError(
                     "FIRMADYNE_QEMU_EARLY_EXIT",
@@ -608,6 +612,9 @@ def stage_emulate(
         deadline = time.monotonic() + 20
 
         while time.monotonic() < deadline:
+            if shutdown_event is not None and shutdown_event.is_set():
+                print("[FIRMARBITER][firmadyne] shutdown requested during TAP interface wait", flush=True)
+                break
             if qemu_proc.poll() is not None:
                 raise AdapterOperationalError(
                     "FIRMADYNE_QEMU_EARLY_EXIT",
@@ -857,7 +864,21 @@ def main() -> int:
             if not unpack_ok:
                 failure_seen = True
 
-            if unpack_ok:
+            # CRITICAL: requested_stages was never checked here — this
+            # adapter always attempted emulate+endpoint-discovery after any
+            # successful unpack, regardless of what was actually requested.
+            # Confirmed via a real run: a "--stages unpack" run's
+            # request.json showed run.requested_stages == ["unpack"], but
+            # stage_emulate() ran anyway. Every prior "unpack-only"
+            # FIRMADYNE run may have silently also attempted full
+            # emulation, consuming unrequested time/resources and
+            # contributing to the shutdown_failed pattern (a shutdown
+            # request arriving mid-emulate had no way to interrupt it).
+            requested_stages = set(
+                request.get("run", {}).get("requested_stages", [])
+            )
+
+            if unpack_ok and "emulate" in requested_stages:
                 iid = iid_holder[0]
                 emulate_start = time.monotonic()
                 emulate_ok, target_ip, qemu_proc = stage_emulate(
@@ -867,9 +888,10 @@ def main() -> int:
                     env=env,
                     boot_wait_timeout=boot_wait_timeout,
                     stage_start=emulate_start,
+                    shutdown_event=signal_received,
                 )
 
-                if emulate_ok:
+                if emulate_ok and "endpoint-discovery" in requested_stages:
                     endpoint_start = time.monotonic()
                     stage_endpoint_discovery(
                         target_ip=target_ip,
