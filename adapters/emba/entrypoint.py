@@ -225,7 +225,74 @@ def run_unpack(request, event_writer, shutdown=None):
     rootfs_dir = artifacts_path / "unpack" / "rootfs"
     if rootfs_dir.exists():
         shutil.rmtree(rootfs_dir)
-    shutil.copytree(found_rootfs, rootfs_dir)
+    # CRITICAL: plain shutil.copytree() previously used here caused two
+    # confirmed, independent VM-crashing incidents. Root cause: copytree's
+    # default copy_function (shutil.copy2) does a naive open()+read+write
+    # for every entry, including character/block device nodes like
+    # /dev/zero. Reading from /dev/zero never terminates on its own — it
+    # returns an infinite stream of zero bytes — so this "copy" was never
+    # actually copying a bounded file; it wrote zeros until the host disk
+    # physically filled to 0 bytes free, both times. This also explains
+    # why the resulting size varied (22GB vs 24GB): it wasn't a fixed
+    # amount of data, it was "whatever free space existed at that moment".
+    # Fixed by walking the tree manually: skip character/block special
+    # files entirely (never meaningful firmware content for independent
+    # verification anyway) and copy everything else normally. Also
+    # normalise permissions afterward so root-owned scratch files (e.g.
+    # Ghidra's tmp/root-ghidra, confirmed to block independent
+    # verification twice already) are readable by the non-root user that
+    # runs FirmArbiter's own verification probes.
+    import os
+    import stat as stat_module
+
+    def _safe_copytree(src: Path, dst: Path) -> None:
+        dst.mkdir(parents=True, exist_ok=True)
+        for entry in os.scandir(src):
+            src_path = Path(entry.path)
+            dst_path = dst / entry.name
+            try:
+                mode = entry.stat(follow_symlinks=False).st_mode
+            except OSError:
+                continue
+            if stat_module.S_ISCHR(mode) or stat_module.S_ISBLK(mode) or stat_module.S_ISFIFO(mode) or stat_module.S_ISSOCK(mode):
+                # Device/special file: create an empty placeholder instead
+                # of reading its "content" (which for char devices like
+                # /dev/zero or /dev/random is unbounded/dangerous to copy).
+                dst_path.touch(exist_ok=True)
+                continue
+            if entry.is_symlink():
+                try:
+                    target = os.readlink(entry.path)
+                    os.symlink(target, dst_path)
+                except OSError:
+                    pass
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                _safe_copytree(src_path, dst_path)
+            else:
+                try:
+                    shutil.copy2(src_path, dst_path)
+                except (OSError, PermissionError):
+                    # A source file unreadable by this process (e.g. a
+                    # root-owned scratch file we can't even open) — skip
+                    # rather than crash; better an incomplete-but-safe
+                    # export than another unbounded-write incident.
+                    pass
+
+    _safe_copytree(found_rootfs, rootfs_dir)
+
+    # Normalise permissions on the exported copy so independent
+    # verification (running as a non-root user) can read everything,
+    # regardless of what ownership/permissions existed in the original
+    # extracted tree.
+    for root, dirs, files in os.walk(rootfs_dir):
+        for name in dirs + files:
+            p = Path(root) / name
+            try:
+                current = p.stat().st_mode
+                p.chmod(current | 0o444 | 0o111 if p.is_dir() else current | 0o444)
+            except OSError:
+                pass
 
     file_count = sum(1 for _ in rootfs_dir.rglob("*") if _.is_file())
 
