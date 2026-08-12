@@ -835,7 +835,18 @@ Examples:
     parser.add_argument(
         "--memory-gb",
         type=float,
-        default=8.0,
+        # CRITICAL: was 8.0 — equal to or exceeding this host's actual
+        # 7.2GB total RAM, meaning this CLI flag's default silently
+        # overrode the coordinator's already-fixed 4GiB default (see
+        # run_coordinator.py) on every single invocation, since this
+        # value is always passed through explicitly. Confirmed via a
+        # real run: docker inspect showed HostConfig.Memory=8589934592
+        # (8GiB) despite run_coordinator.py's dataclass default already
+        # being correctly set to 4GiB — this CLI default was the actual
+        # value being used the whole time. Real cause of a second
+        # near-crash: swap fully exhausted (4.0Gi/4.0Gi used) during a
+        # live EMBA run with 8+ concurrent Ghidra/JVM processes.
+        default=4.0,
     )
     parser.add_argument(
         "--pids-limit",
