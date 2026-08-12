@@ -45,9 +45,9 @@ not estimates:
 
 | Resource | Minimum | Recommended | Why |
 |---|---|---|---|
-| **RAM** | 8 GB | 16 GB+ | A single candidate container is capped at 4 GB by default (`--memory-gb`, see §5.3). Leave real headroom above that for your host OS and anything else running — an under-provisioned cap has caused real VM crashes during this project's own development. |
+| **RAM** | 8 GB | 16 GB+ | See §5.5 — the per-candidate memory cap is a real, user-adjustable flag (`--memory-gb`), not a fixed limit. The figures here describe the minimum needed to run comfortably at the conservative default. |
 | **Disk space** | 80 GB free | 150 GB+ free | EMBA alone can produce **20+ GB of output for a single firmware image** (extracted filesystem, Ghidra decompilation projects, CVE database matching artifacts). Running EMBA against even a handful of firmware images without cleaning up between runs will exhaust a small disk fast. |
-| **CPU** | 4 cores | 8+ cores | Static analysis (EMBA) and dynamic emulation (FirmAE/FIRMADYNE) are both genuinely CPU-heavy. More cores means faster runs, not just more headroom. |
+| **CPU** | 4 cores | 8+ cores | Static analysis (EMBA) and dynamic emulation (FirmAE/FIRMADYNE) are both genuinely CPU-heavy. More cores means faster runs, not just more headroom — see §5.5. |
 
 ### 1.3 Software prerequisites
 
@@ -98,28 +98,30 @@ git checkout refactor/adapter-contract-v1
 
 ## 3. Understanding what you just cloned (a 60-second orientation)
 
+```
 firmarbiter/
-├── run_firmarbiter.py # the CLI you'll actually run
-├── firmarbiter_core/ # the coordinator itself — orchestration,
-│ # independent verification probes, event
-│ # schema validation
-│ └── probes/ # the code that independently verifies
-│ # unpack success, boot success, etc. —
-│ # never trusts a candidate's self-report
-├── adapters/ # one folder per candidate tool
-│ ├── firmae/
-│ ├── firmadyne/
-│ ├── emba/
-│ ├── fact_extractor/ # known-incomplete, see §6.4
-│ └── _template/ # copy this to build a new adapter
-├── schemas/ # the real, enforced JSON schemas every
-│ # adapter manifest and event must satisfy
-├── score_aggregator.py # turns raw results into a summary table
+├── run_firmarbiter.py          # the CLI you'll actually run
+├── firmarbiter_core/           # the coordinator itself — orchestration,
+│                                # independent verification probes, event
+│                                # schema validation
+│   └── probes/                 # the code that independently verifies
+│                                # unpack success, boot success, etc. —
+│                                # never trusts a candidate's self-report
+├── adapters/                   # one folder per candidate tool
+│   ├── firmae/
+│   ├── firmadyne/
+│   ├── emba/
+│   ├── fact_extractor/         # known-incomplete, see §6.4
+│   └── _template/               # copy this to build a new adapter
+├── schemas/                    # the real, enforced JSON schemas every
+│                                # adapter manifest and event must satisfy
+├── score_aggregator.py         # turns raw results into a summary table
 ├── tools/
-│ └── assess_candidate.py # pre-flight compatibility checker for a
-│ # new candidate tool's Dockerfile/repo
-└── results/ # every run's real output lands here,
-# nothing here until you run something
+│   └── assess_candidate.py     # pre-flight compatibility checker for a
+│                                # new candidate tool's Dockerfile/repo
+└── results/                    # every run's real output lands here,
+                                  # nothing here until you run something
+```
 
 You don't need to understand the internals to run an experiment — this
 orientation is here so the file paths referenced later make sense.
@@ -143,17 +145,26 @@ everything downstream depends on this working.
 
 ---
 
-## 5. Building the candidate adapters
+## 5. Building the candidate adapters — and an important thing to know first
 
-Each candidate tool is built as its own Docker image. **Build these one at a
-time and confirm each succeeds** rather than running all four blind — a
-failed build is much easier to diagnose in isolation.
+**You likely don't need to manually build anything.** FirmArbiter's own
+coordinator automatically builds each candidate's Docker image itself,
+fresh, every time you launch an experiment (`docker build --pull ...`,
+using the version tag declared in that adapter's own `adapter.yaml`
+manifest — not something hardcoded in this document). You can skip straight
+to §7 and let it build what it needs on first use.
+
+**Manually pre-building is still worth doing once, though — as a fast,
+isolated diagnostic.** If a candidate's build has a real problem (a broken
+Dockerfile, a network issue reaching its source repository), you'll find
+out in a focused way here, rather than as a confusing failure buried inside
+a longer experiment run. Build these one at a time and confirm each
+succeeds:
 
 > **On Apple Silicon / ARM64 hosts**, the `--platform linux/amd64` flag
 > below is required. **On native Intel/AMD64 hosts (most Windows PCs, Intel
 > Macs, most Linux servers)**, it's technically optional but harmless to
-> include — it makes explicit that these images are amd64-only, which is
-> useful for anyone reading your build history later.
+> include — it makes explicit that these images are amd64-only.
 
 ### 5.1 FirmAE
 
@@ -193,7 +204,29 @@ docker build --platform linux/amd64 -t firmarbiter-adapter-emba:0.3.0 adapters/e
 **This is the largest build** (the resulting image is ~10 GB) and can take
 10+ minutes. This is expected, not a hang.
 
-### 5.5 Confirm everything built correctly
+### 5.5 If you're on a genuinely powerful machine — tune these flags upward
+
+`--memory-gb` and `--cpu-cores` are real, adjustable CLI flags on every run
+(shown in §8.3). **The `4 GB` figure quoted earlier in this document is a
+conservative default calibrated for a resource-constrained development
+environment, not a ceiling built into the program.** If you have a real
+16 GB or 32 GB machine, raising these is genuinely worth doing, for a
+concrete reason: EMBA's Ghidra decompilation stage runs *multiple
+concurrent analysis processes in parallel* — during this project's own
+testing, 8+ simultaneous Ghidra instances were observed running at once. A
+low memory cap forces that parallel work to queue and throttle; a higher
+cap on real hardware with the RAM to back it lets more of that genuine
+parallel work happen simultaneously, which can meaningfully shorten
+completion time, not just consume more RAM for no reason.
+
+As a starting point on a real 16GB+ machine:
+```bash
+--memory-gb 10 --cpu-cores 8
+```
+adjusting further based on what else is running on the same machine and how
+much you're comfortable leaving unused.
+
+### 5.6 Confirm everything built correctly (if you did the manual build in §5.1–5.4)
 
 ```bash
 docker images | grep firmarbiter
@@ -205,7 +238,7 @@ You should see all four images listed:
 - `firmarbiter-neutral-network-probe:1.0.0`
 - `firmarbiter-adapter-emba:0.3.0`
 
-### 5.6 Ask FirmArbiter to confirm it recognizes them
+### 5.7 Ask FirmArbiter to confirm it recognizes them
 
 ```bash
 python3 run_firmarbiter.py --list-candidates
@@ -296,8 +329,11 @@ default timeout (3 hours — far more than FirmAE actually needs).
 
 The coordinator prints live progress to your terminal as each stage
 completes. When it finishes, you'll see a summary line like:
+
+```
 [FIRMARBITER] Result: status=completed unpack=true boot=true reachable=true
 [FIRMARBITER] Saved : /path/to/firmarbiter/results/runs/my-first-run.<case-id>.firmae.attempt-1/final-result.json
+```
 
 ### 7.4 Look at the real result
 
