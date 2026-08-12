@@ -149,17 +149,32 @@ everything downstream depends on this working.
 
 **You likely don't need to manually build anything.** FirmArbiter's own
 coordinator automatically builds each candidate's Docker image itself,
-fresh, every time you launch an experiment (`docker build --pull ...`,
-using the version tag declared in that adapter's own `adapter.yaml`
-manifest — not something hardcoded in this document). You can skip straight
-to §7 and let it build what it needs on first use.
+fresh, every time you launch an experiment (`docker build --pull ...`).
+You can skip straight to §7 and let it build what it needs on first use.
 
 **Manually pre-building is still worth doing once, though — as a fast,
 isolated diagnostic.** If a candidate's build has a real problem (a broken
 Dockerfile, a network issue reaching its source repository), you'll find
 out in a focused way here, rather than as a confusing failure buried inside
-a longer experiment run. Build these one at a time and confirm each
-succeeds:
+a longer experiment run.
+
+**Important: don't copy the version numbers below blindly.** The exact tag
+(`firmarbiter-adapter-<name>:<version>`) is not an arbitrary convention —
+it's constructed by the coordinator itself from each adapter's own
+`adapter.yaml` manifest (`adapter.id` + `adapter.version`), and the
+coordinator looks for an image matching that exact tag. If an adapter's
+version is ever bumped, a hardcoded number here would go stale. **Before
+building, check the real, current version directly from the source of
+truth:**
+
+```bash
+cat adapters/emba/adapter.yaml | grep -A2 "^adapter:"
+```
+
+(swap `emba` for `firmadyne`, `firmae`, etc.) — use whatever `id:` and
+`version:` that actually shows, not the numbers below if they ever differ.
+
+Build these one at a time and confirm each succeeds:
 
 > **On Apple Silicon / ARM64 hosts**, the `--platform linux/amd64` flag
 > below is required. **On native Intel/AMD64 hosts (most Windows PCs, Intel
@@ -168,6 +183,7 @@ succeeds:
 
 ### 5.1 FirmAE
 
+*(version number below assumed current at time of writing — verify with the command above)*
 ```bash
 docker build --platform linux/amd64 -t firmarbiter-adapter-firmae:0.2.4 adapters/firmae/
 ```
@@ -175,6 +191,7 @@ Expect this to take several minutes on first build.
 
 ### 5.2 FIRMADYNE
 
+*(version number below assumed current at time of writing — verify with the command above)*
 ```bash
 docker build --platform linux/amd64 -t firmarbiter-adapter-firmadyne:0.1.1 adapters/firmadyne/
 ```
@@ -197,6 +214,7 @@ docker build --platform linux/amd64 \
 
 ### 5.4 EMBA
 
+*(version number below assumed current at time of writing — verify with the command above)*
 ```bash
 docker build --platform linux/amd64 -t firmarbiter-adapter-emba:0.3.0 adapters/emba/
 ```
@@ -232,11 +250,13 @@ much you're comfortable leaving unused.
 docker images | grep firmarbiter
 ```
 
-You should see all four images listed:
-- `firmarbiter-adapter-firmae:0.2.4`
-- `firmarbiter-adapter-firmadyne:0.1.1`
+You should see all four images listed — but check the *real* versions
+against each `adapter.yaml` (§5, above) rather than assuming they must
+match the numbers quoted earlier in this document:
+- `firmarbiter-adapter-firmae:<version from adapters/firmae/adapter.yaml>`
+- `firmarbiter-adapter-firmadyne:<version from adapters/firmadyne/adapter.yaml>`
 - `firmarbiter-neutral-network-probe:1.0.0`
-- `firmarbiter-adapter-emba:0.3.0`
+- `firmarbiter-adapter-emba:<version from adapters/emba/adapter.yaml>`
 
 ### 5.7 Ask FirmArbiter to confirm it recognizes them
 
@@ -328,11 +348,12 @@ default timeout (3 hours — far more than FirmAE actually needs).
 ### 7.3 Watch it happen
 
 The coordinator prints live progress to your terminal as each stage
-completes. When it finishes, you'll see a summary line like:
+completes. When it finishes, you'll see a summary line similar to this
+(exact wording may vary):
 
 ```
-[FIRMARBITER] Result: status=completed unpack=true boot=true reachable=true
-[FIRMARBITER] Saved : /path/to/firmarbiter/results/runs/my-first-run.<case-id>.firmae.attempt-1/final-result.json
+FIRMARBITER Result: status=completed unpack=true boot=true reachable=true
+FIRMARBITER Saved to: results/runs/my-first-run.<case-id>.firmae.attempt-1/final-result.json
 ```
 
 ### 7.4 Look at the real result
