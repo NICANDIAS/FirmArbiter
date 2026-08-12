@@ -1,0 +1,45 @@
+# adapters/_template/adapter.yaml.example
+#
+# Copy this to adapters/<your_tool>/adapter.yaml and fill in every field.
+# The coordinator discovers adapters automatically by scanning for this
+# file — no separate registration step, so accuracy here matters.
+
+id: your-tool                      # short, filesystem-safe, matches directory name
+version: 0.1.0                     # your adapter's version, not the candidate tool's
+contract_version: "1.0"            # Adapter Contract version this adapter implements — must match schema
+
+candidate:
+  name: "Your Tool Name"
+  # Pin an exact upstream commit/release, never a moving branch —
+  # this is what makes a VERITAS run reproducible.
+  source_repo: "https://github.com/example/your-tool"
+  pinned_commit: "REPLACE_WITH_FULL_COMMIT_SHA"
+
+build:
+  dockerfile: Dockerfile
+  # Pin base images by digest, not just tag — tags can be repointed.
+  # FIRMADYNE hit real breakage from this; do not skip it.
+  base_images:
+    - "ubuntu:22.04@sha256:REPLACE_WITH_DIGEST"
+
+runtime:
+  # Does this tool's image only exist for amd64? If so QEMU translation
+  # applies on ARM64 hosts — expect slower runs, and note in your paper
+  # that dev-host compute-cost numbers are not final performance numbers.
+  platform: "linux/amd64"
+  # Network mode your container needs. "none" is the default VERITAS
+  # sandboxing preference; only relax this if the tool cannot function
+  # otherwise, and document why (see Finding F19 for the tradeoffs this creates).
+  network_mode: "none"
+
+capabilities:
+  # Declare what this tool actually does — a static analysis tool like
+  # EMBA would set emulate/endpoint_discovery to false.
+  unpack: true
+  emulate: true
+  endpoint_discovery: true
+
+  # If true, this tool's own claims about what it found (e.g. "found web
+  # service on X") will be recorded as candidate_claims, but never
+  # substituted for VERITAS's own independent measurement.
+  reports_own_endpoint_claims: true

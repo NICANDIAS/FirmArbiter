@@ -1,0 +1,43 @@
+schema_version: '1.0'
+adapter:
+  id: fact-extractor
+  display_name: FACT Extractor Adapter
+  description: FIRMARBITER adapter wrapping fact_extractor (fkiecad/fact_extractor), a raw binary carver — NOT a filesystem-aware unpacker like FirmAE/FIRMADYNE. Launches the candidate as a sibling container via a mounted Docker socket.
+  version: 0.1.0
+  contract_version: '1.0'
+candidate:
+  name: FACT extractor
+  source:
+    type: git
+    repository: https://github.com/fkie-cad/fact_extractor.git
+    commit: 'a98a562371fa534c9174e8c9268c1c310bdffb2e'
+    requested_ref: master
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+  - python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
+  - fkiecad/fact_extractor@sha256:00ba73280f4744ba3ad3c1d7debd4476b80d95bd2df12c70afb73523385ca9ba
+runtime:
+  run_as_root: true
+  network: none
+  requirements:
+  - nested-containers
+  - full-privileged
+capabilities:
+  stages:
+  - unpack
+  firmware_architectures:
+  - arm
+  - arm64
+  - mips
+  - mipsel
+  - x86
+  - x86_64
+  - powerpc
+  - unknown
+  endpoint_protocols: []
+  hints:
+    architecture: optional
+    vendor: optional

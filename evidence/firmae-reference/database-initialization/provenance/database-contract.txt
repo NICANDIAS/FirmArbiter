@@ -1,0 +1,10 @@
+PostgreSQL major version: 14
+Database: firmware
+Role: firmadyne
+Host: 127.0.0.1
+Port: 5432
+Schema: /opt/firmae/database/schema
+Expected tables: brand,image,object,object_to_image,product
+Authentication: SCRAM-SHA-256 over TCP
+Cluster ownership: postgres:postgres
+State root: /var/lib/veritas/firmae

@@ -1,0 +1,36 @@
+schema_version: '1.0'
+adapter:
+  id: mock-service-adapter
+  display_name: Mock Service Adapter
+  description: Neutral fixture for independent reachability probing.
+  version: 0.1.0
+  contract_version: '1.0'
+candidate:
+  name: Mock Service Candidate
+  source:
+    type: git
+    repository: https://example.invalid/mock-service-candidate.git
+    commit: 0123456789abcdef0123456789abcdef01234567
+  patches: []
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/arm64
+  base_images:
+  - python@sha256:6c4dd321d176d61ea848dc8c73a4f7dbae8f70e0ee48bb411ea2f045b599fa8e
+runtime:
+  run_as_root: false
+  network: host
+  requirements: []
+capabilities:
+  stages:
+  - unpack
+  - emulate
+  - endpoint-discovery
+  firmware_architectures:
+  - unknown
+  endpoint_protocols:
+  - http
+  hints:
+    architecture: optional
+    vendor: unsupported

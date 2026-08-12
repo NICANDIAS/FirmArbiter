@@ -1,0 +1,61 @@
+[
+    {
+        "Architecture": "amd64",
+        "Config": {
+            "Entrypoint": [
+                "python3",
+                "/opt/veritas-adapter/entrypoint.py"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "DEBIAN_FRONTEND=noninteractive",
+                "FIRMAE_HOME=/opt/firmae"
+            ],
+            "Labels": {
+                "org.opencontainers.image.revision": "dd98505984feac91cf113e13d5de01a4fc1574f2",
+                "org.opencontainers.image.source": "https://github.com/pr0v3rbs/FirmAE",
+                "org.opencontainers.image.title": "VERITAS FirmAE Adapter",
+                "org.opencontainers.image.version": "22.04",
+                "veritas.adapter.contract-version": "1.0",
+                "veritas.adapter.id": "firmae",
+                "veritas.dependencies.ubuntu-snapshot": "20260615T120000Z"
+            }
+        },
+        "Created": "2026-06-26T01:40:35.908349177+01:00",
+        "Descriptor": {
+            "digest": "sha256:768e07e11a46454c3b523bf4d6298608c47f595c17b4403398721bff1cb4fd1e",
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "size": 2942
+        },
+        "Id": "sha256:768e07e11a46454c3b523bf4d6298608c47f595c17b4403398721bff1cb4fd1e",
+        "Metadata": {
+            "LastTagTime": "2026-06-26T00:40:36.530116122Z"
+        },
+        "Os": "linux",
+        "Parent": "sha256:48ba1ee72cca9a90f2d2efdc2f7f010160fc8f0e051e264f962aeba1e8efdfa3",
+        "RepoDigests": [
+            "veritas-adapter-firmae@sha256:768e07e11a46454c3b523bf4d6298608c47f595c17b4403398721bff1cb4fd1e"
+        ],
+        "RepoTags": [
+            "veritas-adapter-firmae:unpack-v3"
+        ],
+        "RootFS": {
+            "Layers": [
+                "sha256:8bba68e7621928237aa6d6e2c680cb9572c942ee23c2adabd22016bb67cb938d",
+                "sha256:bfe7ba9784fccd25d9026445919cfc32d85cba9a25fac0630f2efdb6570e6bd7",
+                "sha256:31c4da809000d1e2c9cf3776bc7831f16ac8002d28f9ccf29d0b453212e7868d",
+                "sha256:95b87df168c3330b3b9685e0aede94a76d5355cd8efb56d51a8031e7d3389d90",
+                "sha256:734f4d56213a9810458558be18c3fa0297de19fb9b2ecead8f69424476cf48ec",
+                "sha256:d11730c6be1d3e383d8afa85832206479352b5b4bf5762f580926c57aa40c897",
+                "sha256:b46ccb2670e7baa583179f1f6747bd408e63c0698b1590d1392ec2d2805e8712",
+                "sha256:e1fde73c9fe636f7916bb578104a4548b83d4c5367aceb041560e602db9c6e3f",
+                "sha256:8f3a6d577f6509d43b43bb1e8d231ed7272d6373515089c8507e5b6dc9133bd8",
+                "sha256:0513afa470715de8c1e7c1851b5f04d41d93d2142a7a4d4772cb381acb175bdc",
+                "sha256:65e92c99754d2b5c83819ce065568dc2dfa8e90eb8e8770c4d88cc2d2e6d8e0f",
+                "sha256:c37b5e80eef6f2234cb62b5074882ffa1e4d1af0f6e1bb61fdc6c9efefdb36ba"
+            ],
+            "Type": "layers"
+        },
+        "Size": 250372650
+    }
+]

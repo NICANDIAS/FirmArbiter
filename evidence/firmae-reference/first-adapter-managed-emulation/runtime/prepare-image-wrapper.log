@@ -1,0 +1,10 @@
+===== DATABASE INITIALISATION =====
+===== RESTORE FIRMAE IMAGE RECORD =====
+Database image record:
+1|first-real-firmware|armel|t
+===== DATABASE INDEXING =====
+Indexed rootfs objects: 2188
+===== QEMU IMAGE CREATION =====
+
+QEMU filesystem image preparation passed
+Image: /opt/firmae/scratch/1/image.raw

@@ -1,0 +1,6 @@
+Source: Ubuntu snapshot
+Snapshot: 20260615T120000Z
+Package: ca-certificates
+TLS verification disabled: initial CA bootstrap only
+APT archive authentication disabled: no
+Unauthenticated packages enabled: no

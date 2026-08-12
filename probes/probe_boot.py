@@ -11,8 +11,8 @@ clean environment with only its own declared dependencies, so no tool's
 installation can affect another tool's results.
 
 The container shares the host network stack (--network host) because FirmAE
-and FIRMADYNE create TAP interfaces that VERITAS's service probes need to
-reach from the host side. VERITAS monitors the container from outside — it
+and FIRMADYNE create TAP interfaces that FIRMARBITER's service probes need to
+reach from the host side. FIRMARBITER monitors the container from outside — it
 never runs code inside the container itself.
 
 Resource monitoring (CPU, RAM) reads from the Docker container's stats API
@@ -37,7 +37,7 @@ MONITOR_INTERVAL = 2
 # Stall detection — if tool CPU stays below 1% for this many seconds,
 # it is considered stuck and will be killed rather than waiting for
 # the full 3-hour ceiling. This prevents wasting hours on incompatible firmware.
-# Reads from veritas.conf STALL_TIMEOUT_SECONDS if available, else 600s.
+# Reads from firmarbiter.conf STALL_TIMEOUT_SECONDS if available, else 600s.
 import os as _os
 STALL_CPU_THRESHOLD_SECONDS = int(_os.environ.get("STALL_TIMEOUT_SECONDS", "600"))
 
@@ -135,7 +135,7 @@ def _probe_boot_direct(
     """
     Run the candidate tool directly on the host VM without Docker.
     Used when the tool requires kernel features unavailable in containers.
-    VERITAS monitors from outside using psutil — same as Docker mode.
+    FIRMARBITER monitors from outside using psutil — same as Docker mode.
     """
     import psutil
     import threading
@@ -248,12 +248,12 @@ def _probe_boot_direct(
                         if avg_cpu > 1.0:
                             result["failure_reason"]      = "timeout_while_working"
                             result["was_working_at_stop"] = True
-                            print(f"[VERITAS]        *** Tool was WORKING "
+                            print(f"[FIRMARBITER]        *** Tool was WORKING "
                                   f"when stopped (CPU {avg_cpu:.1f}%)")
                         else:
                             result["failure_reason"]      = "timeout_while_idle"
                             result["was_working_at_stop"] = False
-                            print(f"[VERITAS]        *** Tool was IDLE "
+                            print(f"[FIRMARBITER]        *** Tool was IDLE "
                                   f"when stopped (CPU {avg_cpu:.1f}%)")
                     else:
                         result["failure_reason"] = "timeout"
@@ -271,7 +271,7 @@ def _probe_boot_direct(
                         avg_cpu = sum(s[1] for s in last_n) / len(last_n)
                         status  = "working" if avg_cpu > 1.0 else "IDLE"
                         remaining = int(timeout_seconds - elapsed)
-                        print(f"[VERITAS]        ... {elapsed_int}s elapsed  "
+                        print(f"[FIRMARBITER]        ... {elapsed_int}s elapsed  "
                               f"cpu={avg_cpu:.1f}%  status={status}  "
                               f"{remaining}s remaining")
 
@@ -333,7 +333,7 @@ def probe_boot(
         Not used directly (Docker combines stdout/stderr) but kept for
         interface compatibility.
     output_dir : str or None
-        Directory mounted into the container at /veritas_output.
+        Directory mounted into the container at /firmarbiter_output.
         Created automatically if not provided.
 
     Returns
@@ -372,7 +372,7 @@ def probe_boot(
 
     tool_source = str(tool_source).strip().lower()
     print(
-        f"[VERITAS DEBUG] candidate_conf={candidate_conf} "
+        f"[FIRMARBITER DEBUG] candidate_conf={candidate_conf} "
         f"exists={candidate_conf.exists()} "
         f"tool_source={tool_source!r} candidate_dir={candidate_dir}",
         flush=True,
@@ -457,12 +457,12 @@ def probe_boot(
                     if avg_cpu > 1.0:
                         result["failure_reason"]      = "timeout_while_working"
                         result["was_working_at_stop"] = True
-                        print(f"[VERITAS]        *** Tool was WORKING when stopped "
+                        print(f"[FIRMARBITER]        *** Tool was WORKING when stopped "
                               f"(avg CPU {avg_cpu:.1f}% — may have succeeded with more time)")
                     else:
                         result["failure_reason"]      = "timeout_while_idle"
                         result["was_working_at_stop"] = False
-                        print(f"[VERITAS]        *** Tool was IDLE when stopped "
+                        print(f"[FIRMARBITER]        *** Tool was IDLE when stopped "
                               f"(avg CPU {avg_cpu:.1f}% — likely stuck or incompatible firmware)")
                 else:
                     result["failure_reason"]      = "timeout"
@@ -484,7 +484,7 @@ def probe_boot(
 
                 # Dynamic detection — check for IP address patterns that
                 # indicate network reachability regardless of exact wording.
-                # This means VERITAS works even if tool output format changes.
+                # This means FIRMARBITER works even if tool output format changes.
                 detected_ip = _parse_reported_ip(line)
 
                 # Pattern 1: IP address appears after reachability keywords
@@ -536,7 +536,7 @@ def probe_boot(
                     last_n  = resource_samples[-min(5, len(resource_samples)):]
                     avg_cpu = sum(s[1] for s in last_n) / len(last_n)
                     status  = "working" if avg_cpu > 1.0 else "IDLE"
-                    print(f"[VERITAS]        ... {elapsed_int}s elapsed  "
+                    print(f"[FIRMARBITER]        ... {elapsed_int}s elapsed  "
                           f"cpu={avg_cpu:.1f}%  status={status}  "
                           f"{remaining}s remaining")
 
@@ -550,9 +550,9 @@ def probe_boot(
 
                     if all_idle and enough_samples and elapsed_int >= 60:
                         idle_seconds = len(stall_samples) * MONITOR_INTERVAL
-                        print(f"[VERITAS]        *** STALL DETECTED — tool has been "
+                        print(f"[FIRMARBITER]        *** STALL DETECTED — tool has been "
                               f"idle for {idle_seconds}s (CPU < 1% throughout)")
-                        print(f"[VERITAS]        *** Killing — firmware likely "
+                        print(f"[FIRMARBITER]        *** Killing — firmware likely "
                               f"incompatible with this tool")
                         result["timed_out"]           = False
                         result["failure_reason"]      = "stall_detected_idle"
@@ -562,7 +562,7 @@ def probe_boot(
                         boot_detected = False
                         break
                 else:
-                    print(f"[VERITAS]        ... {elapsed_int}s elapsed  "
+                    print(f"[FIRMARBITER]        ... {elapsed_int}s elapsed  "
                           f"cpu=?  {remaining}s remaining")
 
             time.sleep(2)
@@ -577,13 +577,13 @@ def probe_boot(
     # declaring failure, scan the saved stdout file once.
     if not result.get("success"):
         try:
-            from pathlib import Path as _VeritasPath
+            from pathlib import Path as _FirmArbiterPath
 
             _stdout_path = locals().get("stdout_log_path")
             _signals = locals().get("lower_signals", [])
 
-            if _stdout_path and _VeritasPath(_stdout_path).exists():
-                _fallback_text = _VeritasPath(_stdout_path).read_text(errors="replace")
+            if _stdout_path and _FirmArbiterPath(_stdout_path).exists():
+                _fallback_text = _FirmArbiterPath(_stdout_path).read_text(errors="replace")
 
                 for _line in _fallback_text.splitlines():
                     _lower_line = _line.lower().strip()

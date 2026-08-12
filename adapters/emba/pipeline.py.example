@@ -1,0 +1,66 @@
+# adapters/_template/pipeline.py.example
+#
+# This shows what a FILLED-IN entrypoint.py's three stage functions look
+# like, using a deliberately trivial fake tool as the example. Copy the
+# *shape* of this into your own entrypoint.py's run_unpack / run_emulate /
+# run_endpoint_discovery — do not import this file directly.
+
+import shutil
+import subprocess
+from pathlib import Path
+
+
+def run_unpack(request, event_writer):
+    """
+    Example: extract firmware to the path VERITAS independently checks.
+
+    CRITICAL: VERITAS measures unpack success by inspecting
+    <artifacts>/unpack/rootfs/ directly. Copying the raw .tar.gz there is
+    NOT enough — it must be extracted. This exact mistake cost real time
+    during FIRMADYNE onboarding.
+    """
+    firmware_path = Path(request.firmware.path)
+    artifacts_path = Path(request.paths.artifacts)
+    rootfs_dir = artifacts_path / "unpack" / "rootfs"
+    rootfs_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Replace this with your tool's real extraction command.
+        subprocess.run(
+            ["your-tool-extract", str(firmware_path), "--output", str(rootfs_dir)],
+            check=True, timeout=300,
+        )
+    except subprocess.CalledProcessError as e:
+        # A candidate outcome (extraction failed), not an adapter failure —
+        # do NOT raise here. Report it as a stage result instead.
+        return "failed", f"Extraction command failed: {e}"
+    except subprocess.TimeoutExpired:
+        return "failed", "Extraction timed out"
+
+    if not any(rootfs_dir.iterdir()):
+        return "failed", "Extraction produced no files"
+
+    return "completed", f"Extracted rootfs to {rootfs_dir}"
+
+
+def run_emulate(request, event_writer):
+    """
+    Example for a tool that DOES emulate/boot. If your tool is
+    static-analysis only (like EMBA), skip straight to:
+        return "not_applicable", "This tool does not boot firmware"
+    """
+    # ... boot logic here, using request.lifecycle.boot_wait_timeout_seconds
+    # as your timeout, not a hardcoded number ...
+    return "completed", "Firmware booted successfully"
+
+
+def run_endpoint_discovery(request, event_writer):
+    """
+    Report what YOUR tool claims to find. Remember: this is recorded as
+    a candidate_claim, not treated as a verified result — VERITAS's own
+    neutral probe does the independent verification separately. See
+    Finding F19 for why these two things can legitimately disagree.
+    """
+    # Example of reporting a claimed endpoint:
+    # event_writer.endpoint_reported(protocol="http", host="192.168.0.1", port=80)
+    return "completed", "Reported 1 candidate-claimed endpoint"

@@ -1,0 +1,101 @@
+FirmAE commit:
+dd98505984feac91cf113e13d5de01a4fc1574f2
+Patch SHA-256:
+09a68175811a400cbd9584680153c9a6636bf2b806c4a2554f85b9be01ecdbc3
+Source diff:
+diff --git a/firmae.config b/firmae.config
+index 967e0cc..75a48f1 100644
+--- a/firmae.config
++++ b/firmae.config
+@@ -290,32 +290,75 @@ get_device () {
+ }
+ 
+ add_partition () {
+-    local IFS=$'\n'
+-    local IMAGE_PATH
++    local IMAGE_PATH="${1}"
++    local LOOP_DEV=""
++    local LOOP_BASE=""
++    local PART_BASE=""
++    local SYSDEV=""
+     local DEV_PATH=""
+-    local FOUND=false
++    local MAJMIN=""
++    local MAJ=""
++    local MIN=""
+ 
+-    losetup -Pf ${1}
+-    while (! ${FOUND})
++    losetup -Pf "${IMAGE_PATH}"
++
++    for i in $(seq 1 20)
+     do
++        LOOP_DEV="$(losetup -j "${IMAGE_PATH}" | cut -d: -f1 | head -1)"
++        if [ -n "${LOOP_DEV}" ]; then
++            break
++        fi
+         sleep 1
+-        for LINE in `losetup`
+-        do
+-            IMAGE_PATH=`echo ${LINE} | awk '{print $6}'`
+-            if [ "${IMAGE_PATH}" = "${1}" ]; then
+-                DEV_PATH=`echo ${LINE} | awk '{print $1}'`p1
+-                if [ -e ${DEV_PATH} ]; then
+-                    FOUND=true
+-                fi
++    done
++
++    if [ -z "${LOOP_DEV}" ]; then
++        echo "[VERITAS][firmae] add_partition failed: no loop device for ${IMAGE_PATH}" >&2
++        return 1
++    fi
++
++    LOOP_BASE="$(basename "${LOOP_DEV}")"
++    PART_BASE="${LOOP_BASE}p1"
++    SYSDEV="/sys/block/${LOOP_BASE}/${PART_BASE}/dev"
++    DEV_PATH="/dev/${PART_BASE}"
++
++    for i in $(seq 1 20)
++    do
++        if [ -e "${DEV_PATH}" ]; then
++            echo "${DEV_PATH}"
++            return 0
++        fi
++
++        if [ -e "${SYSDEV}" ]; then
++            MAJMIN="$(cat "${SYSDEV}")"
++            MAJ="${MAJMIN%:*}"
++            MIN="${MAJMIN#*:}"
++
++            mknod "${DEV_PATH}" b "${MAJ}" "${MIN}" 2>/dev/null || true
++            chmod 660 "${DEV_PATH}" 2>/dev/null || true
++            chgrp disk "${DEV_PATH}" 2>/dev/null || true
++
++            if [ -e "${DEV_PATH}" ]; then
++                echo "${DEV_PATH}"
++                return 0
+             fi
+-        done
++        fi
++
++        sleep 1
+     done
+ 
+-    while (! ls -al ${DEV_PATH} | grep -q "disk")
++    kpartx -avs "${LOOP_DEV}" >/dev/null 2>&1 || kpartx -av "${LOOP_DEV}" >/dev/null 2>&1 || true
++
++    for i in $(seq 1 10)
+     do
++        if [ -e "/dev/mapper/${PART_BASE}" ]; then
++            echo "/dev/mapper/${PART_BASE}"
++            return 0
++        fi
+         sleep 1
+     done
+-    echo ${DEV_PATH}
++
++    echo "[VERITAS][firmae] add_partition failed: no partition node for ${LOOP_DEV}" >&2
++    return 1
+ }
+ 
+ del_partition () {

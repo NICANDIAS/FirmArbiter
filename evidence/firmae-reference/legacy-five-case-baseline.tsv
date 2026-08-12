@@ -1,0 +1,9 @@
+FIRMAE LEGACY FIVE-CASE BASELINE
+Source: historical prototype run
+
+case	legacy_outcome	important_note
+DIR-868L_REVA_FIRMWARE_1.12B04.zip	reported_success	ZIP member was extracted before candidate execution
+DIR-868L_REVB_FIRMWARE_2.05B02_HOTFIX.zip	reported_success	ZIP member was extracted before candidate execution
+FW_RT3200_1.1.01.272918_PROD_unsigned.img	timeout_while_working	approximately 900 seconds; high sustained CPU
+FW_RT3200_1.2.00.360516_prod_signed.img	early_failure	approximately 31 seconds
+FW_RX7500_1.0.04.246_prod.bin	early_failure	approximately 31 seconds

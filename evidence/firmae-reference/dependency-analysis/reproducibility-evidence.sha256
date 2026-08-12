@@ -1,0 +1,5 @@
+a9d6243857e873f4c87578af6e70cd886113186856d227bf6cfbaf0d39838794  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-direct-lock.tsv
+a9d6243857e873f4c87578af6e70cd886113186856d227bf6cfbaf0d39838794  evidence/firmae-reference/dependency-analysis/repro-build-b/provenance/apt-direct-lock.tsv
+96619bbc1da857fd48bbf717ffb472b2e89eef88b6a875ffb084afb56537d7c1  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-installed-lock.tsv
+96619bbc1da857fd48bbf717ffb472b2e89eef88b6a875ffb084afb56537d7c1  evidence/firmae-reference/dependency-analysis/repro-build-b/provenance/apt-installed-lock.tsv
+b32318cd5beab03d3e90b6bf320b4fd32a91372b5b9a84ab3125bad10ba84571  evidence/firmae-reference/dependency-analysis/reproducibility-comparison.txt

@@ -1,0 +1,157 @@
+FIRMAE LEGACY COMPATIBILITY SEARCH
+Collected UTC: 2026-06-25T20:20:19+00:00
+
+=== LEGACY CANDIDATE FILES ===
+candidates/firmae/actual_deps.txt
+candidates/firmae/candidate.conf
+candidates/firmae/declared_deps.txt
+candidates/firmae/Dockerfile
+candidates/firmae/Dockerfile.adapter-only
+candidates/firmae/run_adapter.sh
+candidates/firmae/run_adapter.sh.before_persistent_mode_20260625_153835Z
+candidates/firmae/veritas_patch_firmae_config.py
+
+=== COMPATIBILITY KEYWORD HITS ===
+docker_runner.py:20:The firmware folder is mounted read-only into every container so tools
+docker_runner.py:378:        # Pass all loop devices and device mapper from host to container
+docker_runner.py:379:        # FirmAE needs loop devices AND /dev/mapper for kpartx to work
+docker_runner.py:381:        loop_flags = []
+docker_runner.py:382:        if Path("/dev/loop-control").exists():
+docker_runner.py:383:            loop_flags += ["--device", "/dev/loop-control"]
+docker_runner.py:384:        for _ld in sorted(_glob.glob("/dev/loop[0-9]*")):
+docker_runner.py:385:            loop_flags += ["--device", _ld]
+docker_runner.py:386:        # Device mapper — needed for kpartx to create partition devices
+docker_runner.py:388:            loop_flags += ["--device", "/dev/mapper/control"]
+docker_runner.py:391:                loop_flags += ["--device", _dm]
+docker_runner.py:394:            loop_flags += ["--device", _dm]
+docker_runner.py:400:            "--privileged",
+docker_runner.py:402:        ] + loop_flags + [
+candidates/firmae/Dockerfile:19:    busybox-static fakeroot kpartx uml-utilities util-linux vlan \
+candidates/firmae/Dockerfile:21:    postgresql postgresql-client binwalk unzip p7zip-full \
+candidates/firmae/Dockerfile:44:    grep -n "kpartx -avs" /opt/firmae/firmae.config
+run_veritas.py:115:    This is necessary because FirmAE uses a persistent PostgreSQL database
+run_veritas.py:128:    # Clean up stale loop devices left by previous FirmAE runs (Finding F7)
+run_veritas.py:129:    # FirmAE does not detach loop devices on container exit, causing
+run_veritas.py:130:    # subsequent runs to fail with "failed to set up loop device"
+run_veritas.py:134:            ["sudo", "losetup", "-l"],
+run_veritas.py:141:                if dev.startswith("/dev/loop"):
+run_veritas.py:144:            print(f"[VERITAS] Detaching {len(stale)} stale loop devices "
+run_veritas.py:147:                _sp.run(["sudo", "losetup", "-d", dev],
+run_veritas.py:149:            print(f"[VERITAS] Stale loop devices cleared: {stale}")
+run_veritas.py:151:            print("[VERITAS] No stale loop devices found")
+run_veritas.py:153:        print(f"[VERITAS] Loop device cleanup skipped: {e}")
+run_veritas.py:167:                "docker", "run", "--rm", "--privileged",
+run_veritas.py:172:                "service postgresql start 2>/dev/null || true; "
+run_veritas.py:174:                "sudo -u postgres psql -d firmware "
+run_veritas.py:918:            "cleanup": {"stale_tap_devices": [], "orphan_qemu_pids": [],
+run_veritas.py:1073:        # candidate's own shutdown trap to remove QEMU/TAP/VLAN state first.
+run_veritas.py:1116:          f"stale_taps={cleanup_result['stale_tap_devices']}  "
+candidates/firmae/run_adapter.sh:49:service postgresql start 2>&1 || true
+candidates/firmae/run_adapter.sh:52:sudo -u postgres psql -c \
+candidates/firmae/run_adapter.sh:54:sudo -u postgres psql -c \
+candidates/firmae/run_adapter.sh:56:sudo -u postgres psql -d firmware \
+candidates/firmae/run_adapter.sh:65:    sudo -u postgres psql -d firmware -c "DELETE FROM image;" 2>/dev/null || true
+probes/probe_cleanup.py:8:  1. Stale TAP network interfaces — these cause TUNSETIFF "Device or
+probes/probe_cleanup.py:28:def _get_stale_tap_devices() -> list:
+probes/probe_cleanup.py:29:    """Return names of TAP interfaces currently present on the host."""
+probes/probe_cleanup.py:38:    return re.findall(r'\d+:\s+(tap\w+):', output)
+probes/probe_cleanup.py:82:def _remove_tap_devices(tap_names: list):
+probes/probe_cleanup.py:83:    """Remove stale TAP interfaces. Requires root."""
+probes/probe_cleanup.py:84:    for name in tap_names:
+probes/probe_cleanup.py:110:def _cleanup_stale_loop_devices():
+probes/probe_cleanup.py:112:    Detach any loop devices left behind by FirmAE or FIRMADYNE.
+probes/probe_cleanup.py:113:    FirmAE does not clean up loop devices on exit — Finding F7.
+probes/probe_cleanup.py:118:            ["sudo", "losetup", "-l"],
+probes/probe_cleanup.py:130:                if dev.startswith("/dev/loop"):
+probes/probe_cleanup.py:133:            subprocess.run(["sudo", "losetup", "-d", dev],
+probes/probe_cleanup.py:149:        If True, remove stale TAP devices, kill orphan QEMU processes,
+probes/probe_cleanup.py:157:    stale_taps          = _get_stale_tap_devices()
+probes/probe_cleanup.py:162:        "stale_tap_devices":        stale_taps,
+probes/probe_cleanup.py:166:            len(stale_taps)          == 0 and
+probes/probe_cleanup.py:173:        if stale_taps:
+probes/probe_cleanup.py:174:            _remove_tap_devices(stale_taps)
+probes/probe_boot.py:14:and FIRMADYNE create TAP interfaces that VERITAS's service probes need to
+probes/probe_boot.py:113:    Excludes loopback (127.x) and Docker bridge addresses (172.17.x)
+probes/probe_boot.py:335:        Directory mounted into the container at /veritas_output.
+probes/probe_boot.py:445:        # mounted output directory, avoiding reliance on noisy mixed logs.
+probes/probe_boot.py:530:                # (handled after the loop)
+probes/probe_boot.py:588:                        # Signal the outer loop to break
+candidates/firmae/veritas_patch_firmae_config.py:13:    local LOOP_DEV=""
+candidates/firmae/veritas_patch_firmae_config.py:14:    local LOOP_BASE=""
+candidates/firmae/veritas_patch_firmae_config.py:22:    losetup -Pf "${IMAGE_PATH}"
+candidates/firmae/veritas_patch_firmae_config.py:26:        LOOP_DEV="$(losetup -j "${IMAGE_PATH}" | cut -d: -f1 | head -1)"
+candidates/firmae/veritas_patch_firmae_config.py:27:        if [ -n "${LOOP_DEV}" ]; then
+candidates/firmae/veritas_patch_firmae_config.py:33:    if [ -z "${LOOP_DEV}" ]; then
+candidates/firmae/veritas_patch_firmae_config.py:34:        echo "[VERITAS][firmae] add_partition failed: no loop device for ${IMAGE_PATH}" >&2
+candidates/firmae/veritas_patch_firmae_config.py:38:    LOOP_BASE="$(basename "${LOOP_DEV}")"
+candidates/firmae/veritas_patch_firmae_config.py:39:    PART_BASE="${LOOP_BASE}p1"
+candidates/firmae/veritas_patch_firmae_config.py:40:    SYSDEV="/sys/block/${LOOP_BASE}/${PART_BASE}/dev"
+candidates/firmae/veritas_patch_firmae_config.py:68:    kpartx -avs "${LOOP_DEV}" >/dev/null 2>&1 || kpartx -av "${LOOP_DEV}" >/dev/null 2>&1 || true
+candidates/firmae/veritas_patch_firmae_config.py:79:    echo "[VERITAS][firmae] add_partition failed: no partition node for ${LOOP_DEV}" >&2
+candidates/firmae/veritas_patch_firmae_config.py:107:    'SYSDEV="/sys/block/${LOOP_BASE}/${PART_BASE}/dev"',
+candidates/firmae/veritas_patch_firmae_config.py:109:    'kpartx -avs "${LOOP_DEV}"',
+
+=== SUCCESS-DETECTION AND LIFECYCLE HITS ===
+docker_runner.py:350:        print(f"[VERITAS][docker] Rebuilding {self.candidate_id} from scratch...")
+run_veritas.py:85:from probes.probe_cleanup   import probe_cleanup
+run_veritas.py:110:def _reset_firmae_state_in_containers():
+run_veritas.py:112:    Reset FirmAE's accumulated database and scratch state.
+run_veritas.py:115:    This is necessary because FirmAE uses a persistent PostgreSQL database
+run_veritas.py:116:    that accumulates IID entries across runs. Without resetting, subsequent
+run_veritas.py:120:    The database persists across runs, meaning each run is not independent.
+run_veritas.py:126:    print("[VERITAS] Resetting FirmAE session state (Finding F13)...")
+run_veritas.py:153:        print(f"[VERITAS] Loop device cleanup skipped: {e}")
+run_veritas.py:161:        return  # Image not built yet, nothing to reset
+run_veritas.py:164:        # Run a quick reset inside a temporary FirmAE container
+run_veritas.py:176:                "rm -rf /opt/firmae/scratch/* 2>/dev/null || true; "
+run_veritas.py:178:                "echo '[VERITAS] FirmAE state reset complete'"
+run_veritas.py:184:            print("[VERITAS] FirmAE state reset complete")
+run_veritas.py:186:            print("[VERITAS] FirmAE state reset skipped (non-fatal)")
+run_veritas.py:188:        print(f"[VERITAS] FirmAE state reset skipped: {e}")
+run_veritas.py:238:              "success_signals": ["Network reachable", "Web service"],
+run_veritas.py:270:        # Parse the comma-separated success_signals into a list
+run_veritas.py:271:        raw_signals = settings.get("success_signals", "")
+run_veritas.py:282:            "success_signals":         signals,
+run_veritas.py:918:            "cleanup": {"stale_tap_devices": [], "orphan_qemu_pids": [],
+run_veritas.py:919:                        "orphan_docker_containers": [], "cleanup_clean": True},
+run_veritas.py:979:                success_signals=candidate["success_signals"],
+run_veritas.py:1072:        # Stop the candidate before measuring cleanup. This allows the
+run_veritas.py:1101:                    "cleanup measurement"
+run_veritas.py:1112:    # ── 5. Cleanup probe ──────────────────────────────────────────────────────
+run_veritas.py:1113:    print(f"[VERITAS] 5/5  cleanup check ...")
+run_veritas.py:1114:    cleanup_result = probe_cleanup(candidate_name=candidate_id, force_clean=True)
+run_veritas.py:1115:    print(f"         clean={cleanup_result['cleanup_clean']}  "
+run_veritas.py:1116:          f"stale_taps={cleanup_result['stale_tap_devices']}  "
+run_veritas.py:1117:          f"qemu_pids={cleanup_result['orphan_qemu_pids']}")
+run_veritas.py:1147:        "cleanup":           cleanup_result,
+run_veritas.py:1214:             "redone from scratch. You will be asked to confirm."
+run_veritas.py:1269:                print(f"    Signals:    {c['success_signals']}")
+run_veritas.py:1311:    # Pre-session reset for stateful tools (Finding F13)
+run_veritas.py:1312:    # Resets FirmAE database once per session, not between images
+run_veritas.py:1314:        print("[VERITAS] FirmAE pre-session reset skipped for direct-mode test")
+run_veritas.py:1315:        # _reset_firmae_state_in_containers()
+candidates/firmae/candidate.conf:6:success_signals = Network reachable on, Web service on
+candidates/firmae/run_adapter.sh:55:    "CREATE DATABASE firmware OWNER firmadyne;" 2>/dev/null || true
+candidates/firmae/run_adapter.sh:57:    -f "$FIRMAE_DIR/database/schema" 2>/dev/null || true
+candidates/firmae/run_adapter.sh:66:    sudo rm -rf "$FIRMAE_DIR/scratch"/* 2>/dev/null || true
+probes/probe_boot.py:108:        [+] Network reachable on 192.168.0.1!
+probes/probe_boot.py:109:        [+] Web service on 192.168.0.1
+probes/probe_boot.py:131:    success_signals, stdout_log, stderr_log,
+probes/probe_boot.py:162:    lower_signals = [s.lower().strip() for s in success_signals]
+probes/probe_boot.py:206:                        "reachable", "network reachable", "web service",
+probes/probe_boot.py:305:    success_signals: list,
+probes/probe_boot.py:325:    success_signals : list of str
+probes/probe_boot.py:384:            success_signals=success_signals,
+probes/probe_boot.py:417:    lower_signals = [s.lower() for s in success_signals]
+probes/probe_boot.py:515:                    "reachable", "network reachable", "web service",
+probes/probe_boot.py:627:                        "reachable", "network reachable", "web service",
+probes/probe_boot.py:646:                            "stdout_log_fallback_ip_with_keyword"
+probes/probe_boot.py:648:                            "stdout_log_fallback_explicit_signal"
+probes/probe_boot.py:658:                result["notes"].append(f"stdout_log_fallback_scan_failed: {_exc}")
+probes/probe_cleanup.py:2:probe_cleanup.py
+probes/probe_cleanup.py:20:how messy the previous tool was. The fact that cleanup was needed is
+probes/probe_cleanup.py:110:def _cleanup_stale_loop_devices():
+probes/probe_cleanup.py:140:def probe_cleanup(candidate_name: str, force_clean: bool = True) -> dict:
+probes/probe_cleanup.py:142:    Check post-run environment and optionally force cleanup.
+probes/probe_cleanup.py:155:        Matches the 'cleanup' block in result_schema.json.
+probes/probe_cleanup.py:165:        "cleanup_clean": (

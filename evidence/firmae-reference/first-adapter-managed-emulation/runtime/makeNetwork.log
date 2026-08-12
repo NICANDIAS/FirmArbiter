@@ -1,0 +1,48 @@
+[*] Infer test: /etc/init0.d/rcS (POSIX shell script, ASCII text executable)
+[*] web service: None
+Running firmware 1: terminating after 360 secs...
+qemu-system-arm: terminating on signal 2 from pid 5163 (/usr/bin/qemu-x86_64)
+Infer NVRAM default file!
+
+[*] Interfaces: [('br0', '192.168.0.1'), ('br1', '192.168.7.1'), ('eth0', '10.0.2.15')]
+[*] ports: []
+[*] networkInfo: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+has vlan ethernet
+[*] filter network info: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+===== Check inferred emulation start =====
+[*] Inferred network: terminating after 360 secs...
+[*] Waiting web service... from 192.168.0.1: terminating after 360 secs...
+=====  Check inferred emulation end  =====
+qemu-system-arm: terminating on signal 15 from pid 10068 (<unknown process>)
+[*] Infer test: /etc/init.d/rcS (POSIX shell script, ASCII text executable)
+[*] web service: None
+Running firmware 1: terminating after 360 secs...
+qemu-system-arm: terminating on signal 2 from pid 10240 (/usr/bin/qemu-x86_64)
+Infer NVRAM default file!
+
+[*] Interfaces: [('br0', '192.168.0.1'), ('br1', '192.168.7.1'), ('eth0', '10.0.2.15')]
+[*] ports: []
+[*] networkInfo: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+has vlan ethernet
+[*] filter network info: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+===== Check inferred emulation start =====
+[*] Inferred network: terminating after 360 secs...
+[*] Waiting web service... from 192.168.0.1: terminating after 360 secs...
+=====  Check inferred emulation end  =====
+qemu-system-arm: terminating on signal 15 from pid 14740 (<unknown process>)
+[*] Infer test: /firmadyne/preInit.sh (a /firmadyne/sh script, ASCII text executable)
+[*] web service: None
+Running firmware 1: terminating after 360 secs...
+qemu-system-arm: terminating on signal 2 from pid 14912 (/usr/bin/qemu-x86_64)
+Infer NVRAM default file!
+
+[*] Interfaces: [('br0', '192.168.0.1'), ('br1', '192.168.7.1'), ('eth0', '10.0.2.15')]
+[*] ports: []
+[*] networkInfo: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+has vlan ethernet
+[*] filter network info: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+===== Check inferred emulation start =====
+[*] Inferred network: terminating after 360 secs...
+[*] Waiting web service... from 192.168.0.1: terminating after 360 secs...
+=====  Check inferred emulation end  =====
+qemu-system-arm: terminating on signal 15 from pid 18317 (<unknown process>)

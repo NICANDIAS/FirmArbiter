@@ -1,0 +1,9 @@
+Disk /opt/firmae/scratch/1/image.raw: 1 GiB, 1073741824 bytes, 2097152 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0x14e80ded
+
+Device                           Boot Start     End Sectors  Size Id Type
+/opt/firmae/scratch/1/image.raw1       2048 2097151 2095104 1023M 83 Linux

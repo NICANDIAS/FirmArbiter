@@ -1,0 +1,1 @@
+/opt/firmae/firmae.config

@@ -1,0 +1,46 @@
+{
+  "measured_at": "2026-06-26T04:44:55.145446Z",
+  "results": [
+    {
+      "port": 21,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 22,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 23,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 53,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 80,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 443,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 8080,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    },
+    {
+      "port": 8443,
+      "protocol": "tcp",
+      "state": "closed-or-unreachable"
+    }
+  ],
+  "target": "192.168.0.1"
+}

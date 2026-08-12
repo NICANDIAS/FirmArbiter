@@ -1,0 +1,12 @@
+2:[*] web service: None
+7:[*] Interfaces: [('br0', '192.168.0.1'), ('br1', '192.168.7.1'), ('eth0', '10.0.2.15')]
+8:[*] ports: []
+9:[*] networkInfo: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+18:[*] web service: None
+23:[*] Interfaces: [('br0', '192.168.0.1'), ('br1', '192.168.7.1'), ('eth0', '10.0.2.15')]
+24:[*] ports: []
+25:[*] networkInfo: [('192.168.0.1', 'eth0', 1, None, 'br0')]
+34:[*] web service: None
+39:[*] Interfaces: [('br0', '192.168.0.1'), ('br1', '192.168.7.1'), ('eth0', '10.0.2.15')]
+40:[*] ports: []
+41:[*] networkInfo: [('192.168.0.1', 'eth0', 1, None, 'br0')]

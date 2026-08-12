@@ -1,0 +1,951 @@
+===== MOCK CONTRACT ADAPTER =====
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+
+def utc_now() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def map_contract_path(contract_path: str) -> Path:
+    """
+    Map /veritas paths into a temporary host directory for tests.
+
+    Real container adapters will use the /veritas paths directly.
+    """
+    root_value = os.environ.get("VERITAS_CONTRACT_ROOT")
+
+    if not root_value:
+        return Path(contract_path)
+
+    relative = PurePosixPath(contract_path).relative_to(
+        "/veritas"
+    )
+
+    return Path(root_value) / Path(*relative.parts)
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(
+            "Usage: mock_contract_adapter.py REQUEST_PATH",
+            file=sys.stderr,
+        )
+        return 2
+
+    request_path = Path(sys.argv[1])
+    request = json.loads(
+        request_path.read_text(encoding="utf-8")
+    )
+
+    run_id = request["run"]["run_id"]
+    adapter_id = request["run"]["adapter_id"]
+
+    events_path = map_contract_path(
+        request["paths"]["events"]
+    )
+    control_directory = map_contract_path(
+        request["paths"]["control"]
+    )
+
+    shutdown_path = control_directory / "shutdown.json"
+
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    control_directory.mkdir(parents=True, exist_ok=True)
+
+    sequence = 0
+
+    with events_path.open(
+        "a",
+        encoding="utf-8",
+        buffering=1,
+    ) as event_file:
+
+        def emit(
+            event_name: str,
+            **additional_fields: Any,
+        ) -> None:
+            nonlocal sequence
+            sequence += 1
+
+            document = {
+                "schema_version": "1.0",
+                "contract_version": "1.0",
+                "event": event_name,
+                "sequence": sequence,
+                "timestamp": utc_now(),
+                "run_id": run_id,
+                "adapter_id": adapter_id,
+                **additional_fields,
+            }
+
+            event_file.write(
+                json.dumps(
+                    document,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            event_file.flush()
+
+        emit(
+            "adapter_started",
+            state="starting",
+        )
+
+        emit(
+            "candidate_started",
+            state="running",
+        )
+
+        time.sleep(0.1)
+
+        # This is a candidate claim, not an independently verified metric.
+        emit(
+            "candidate_boot_reported",
+            state="running",
+        )
+
+        # 192.0.2.0/24 is reserved for documentation and testing.
+        emit(
+            "endpoint_reported",
+            state="waiting_for_shutdown",
+            endpoint={
+                "host": "192.0.2.10",
+                "port": 8080,
+                "protocol": "http",
+            },
+        )
+
+        heartbeat_interval = max(
+            0.1,
+            float(
+                request["lifecycle"][
+                    "heartbeat_interval_seconds"
+                ]
+            ),
+        )
+
+        next_heartbeat = time.monotonic()
+
+        while not shutdown_path.exists():
+            current_time = time.monotonic()
+
+            if current_time >= next_heartbeat:
+                emit(
+                    "heartbeat",
+                    state="waiting_for_shutdown",
+                )
+                next_heartbeat = (
+                    current_time + heartbeat_interval
+                )
+
+            time.sleep(0.05)
+
+        emit(
+            "shutdown_started",
+            state="shutting_down",
+        )
+
+        # A real adapter would stop its native candidate here.
+        time.sleep(0.1)
+
+        emit(
+            "cleanup_complete",
+            state="shutting_down",
+        )
+
+        emit(
+            "adapter_stopped",
+            outcome="completed",
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+===== ADAPTER LIFECYCLE TEST =====
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from veritas_core.adapter_supervisor import (
+    AdapterProcessSupervisor,
+)
+from veritas_core.event_protocol import (
+    AdapterEventStream,
+    EventProtocolError,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+EVENT_SCHEMA = (
+    PROJECT_ROOT / "schemas" / "adapter-event-v1.schema.json"
+)
+
+MOCK_ADAPTER = (
+    PROJECT_ROOT / "tests" / "fixtures"
+    / "mock_contract_adapter.py"
+)
+
+
+def sha256_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def create_contract_root(root: Path) -> Path:
+    firmware_content = b"neutral mock firmware input\n"
+
+    input_directory = root / "input"
+    input_directory.mkdir(parents=True)
+
+    firmware_path = input_directory / "firmware"
+    firmware_path.write_bytes(firmware_content)
+
+    request = {
+        "schema_version": "1.0",
+        "contract_version": "1.0",
+        "run": {
+            "experiment_id": "contract-test",
+            "run_id": "contract-test.case-001.mock-adapter.attempt-1",
+            "adapter_id": "mock-adapter",
+            "attempt": 1,
+            "created_at": "2026-06-25T16:30:00Z",
+            "requested_stages": [
+                "unpack",
+                "emulate",
+                "endpoint-discovery"
+            ]
+        },
+        "firmware": {
+            "case_id": "case-001",
+            "path": "/veritas/input/firmware",
+            "sha256": sha256_bytes(firmware_content),
+            "size_bytes": len(firmware_content),
+            "delivery_semantics": "opaque-original-bytes",
+            "read_only": True
+        },
+        "lifecycle": {
+            "timeout_seconds": 30,
+            "heartbeat_interval_seconds": 1,
+            "heartbeat_timeout_seconds": 3,
+            "shutdown_grace_seconds": 5
+        },
+        "resources": {
+            "cpu_cores": 1,
+            "memory_bytes": 268435456,
+            "pids_limit": 128
+        },
+        "runtime_grants": {
+            "run_as_root": False,
+            "network": "none",
+            "requirements": []
+        },
+        "paths": {
+            "workspace": "/veritas/work",
+            "artifacts": "/veritas/artifacts",
+            "events": "/veritas/events/events.jsonl",
+            "control": "/veritas/control"
+        },
+        "integrity": {
+            "adapter_manifest_sha256": "a" * 64,
+            "experiment_manifest_sha256": "b" * 64
+        }
+    }
+
+    request_path = input_directory / "request.json"
+    request_path.write_text(
+        json.dumps(request, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    return request_path
+
+
+class AdapterLifecycleTests(unittest.TestCase):
+    def test_adapter_remains_alive_until_shutdown(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            contract_root = Path(temporary_directory)
+            request_path = create_contract_root(
+                contract_root
+            )
+
+            supervisor = AdapterProcessSupervisor(
+                command=[
+                    sys.executable,
+                    str(MOCK_ADAPTER),
+                ],
+                request_path=request_path,
+                contract_root=contract_root,
+                event_schema_path=EVENT_SCHEMA,
+            )
+
+            try:
+                supervisor.start()
+
+                endpoint_event = supervisor.wait_for_event(
+                    "endpoint_reported",
+                    timeout_seconds=5,
+                )
+
+                self.assertEqual(
+                    endpoint_event["endpoint"]["port"],
+                    8080,
+                )
+
+                # Critical contract requirement:
+                # endpoint reporting must not end emulation.
+                self.assertTrue(supervisor.process_alive)
+
+                supervisor.wait_for_event(
+                    "heartbeat",
+                    timeout_seconds=3,
+                )
+
+                self.assertTrue(supervisor.process_alive)
+
+                supervisor.request_shutdown()
+
+                return_code = supervisor.wait_for_exit(
+                    timeout_seconds=5,
+                )
+
+                self.assertEqual(return_code, 0)
+
+                supervisor.drain_events()
+
+                event_names = [
+                    event["event"]
+                    for event in supervisor.events
+                ]
+
+                self.assertEqual(
+                    event_names[:4],
+                    [
+                        "adapter_started",
+                        "candidate_started",
+                        "candidate_boot_reported",
+                        "endpoint_reported",
+                    ],
+                )
+
+                heartbeat_events = [
+                    event_name
+                    for event_name in event_names
+                    if event_name == "heartbeat"
+                ]
+
+                self.assertGreaterEqual(
+                    len(heartbeat_events),
+                    1,
+                    "Adapter must emit at least one heartbeat before shutdown",
+                )
+
+                self.assertEqual(
+                    event_names[-3:],
+                    [
+                        "shutdown_started",
+                        "cleanup_complete",
+                        "adapter_stopped",
+                    ],
+                )
+
+                shutdown_index = event_names.index("shutdown_started")
+
+                self.assertTrue(
+                    all(
+                        event_name == "heartbeat"
+                        for event_name in event_names[4:shutdown_index]
+                    ),
+                    "Only heartbeat events are permitted while awaiting shutdown",
+                )
+
+                sequences = [
+                    event["sequence"]
+                    for event in supervisor.events
+                ]
+
+                self.assertEqual(
+                    sequences,
+                    list(
+                        range(
+                            1,
+                            len(sequences) + 1,
+                        )
+                    ),
+                )
+
+                # Candidate endpoint claims are not measurements.
+                self.assertNotIn(
+                    "reachable",
+                    endpoint_event,
+                )
+                self.assertNotIn(
+                    "verified",
+                    endpoint_event,
+                )
+
+            finally:
+                supervisor.force_terminate()
+
+    def test_success_field_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            event_path = root / "events.jsonl"
+
+            invalid_event = {
+                "schema_version": "1.0",
+                "contract_version": "1.0",
+                "event": "adapter_started",
+                "sequence": 1,
+                "timestamp": "2026-06-25T16:30:00Z",
+                "run_id": "contract-test.run-1",
+                "adapter_id": "mock-adapter",
+                "success": True
+            }
+
+            event_path.write_text(
+                json.dumps(invalid_event) + "\n",
+                encoding="utf-8",
+            )
+
+            stream = AdapterEventStream(
+                event_path=event_path,
+                schema_path=EVENT_SCHEMA,
+                expected_run_id="contract-test.run-1",
+                expected_adapter_id="mock-adapter",
+            )
+
+            with self.assertRaises(
+                EventProtocolError
+            ) as context:
+                stream.read_new()
+
+            self.assertIn(
+                "Additional properties are not allowed",
+                str(context.exception),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+===== DOCKER ADAPTER LIFECYCLE TEST =====
+from __future__ import annotations
+
+import hashlib
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from veritas_core.adapter_registry import discover_adapters
+from veritas_core.docker_backend import DockerBackend
+from veritas_core.docker_supervisor import (
+    DockerAdapterSupervisor,
+)
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+MANIFEST_SCHEMA = (
+    PROJECT_ROOT
+    / "schemas"
+    / "adapter-manifest-v1.schema.json"
+)
+
+REQUEST_SCHEMA = (
+    PROJECT_ROOT
+    / "schemas"
+    / "run-request-v1.schema.json"
+)
+
+EVENT_SCHEMA = (
+    PROJECT_ROOT
+    / "schemas"
+    / "adapter-event-v1.schema.json"
+)
+
+ADAPTER_ROOT = (
+    PROJECT_ROOT
+    / "tests"
+    / "fixtures"
+    / "docker-adapters"
+)
+
+
+def create_contract_root(root: Path) -> Path:
+    firmware_content = b"immutable docker test firmware\n"
+
+    input_directory = root / "input"
+    input_directory.mkdir(parents=True)
+
+    firmware_path = input_directory / "firmware"
+    firmware_path.write_bytes(firmware_content)
+
+    request = {
+        "schema_version": "1.0",
+        "contract_version": "1.0",
+        "run": {
+            "experiment_id": "docker-contract-test",
+            "run_id": (
+                "docker-contract-test.case-001."
+                "mock-docker-adapter.attempt-1"
+            ),
+            "adapter_id": "mock-docker-adapter",
+            "attempt": 1,
+            "created_at": "2026-06-25T16:30:00Z",
+            "requested_stages": [
+                "unpack",
+                "emulate",
+                "endpoint-discovery"
+            ]
+        },
+        "firmware": {
+            "case_id": "case-001",
+            "path": "/veritas/input/firmware",
+            "sha256": hashlib.sha256(
+                firmware_content
+            ).hexdigest(),
+            "size_bytes": len(firmware_content),
+            "delivery_semantics": "opaque-original-bytes",
+            "read_only": True
+        },
+        "lifecycle": {
+            "timeout_seconds": 30,
+            "heartbeat_interval_seconds": 1,
+            "heartbeat_timeout_seconds": 3,
+            "shutdown_grace_seconds": 5
+        },
+        "resources": {
+            "cpu_cores": 1,
+            "memory_bytes": 268435456,
+            "pids_limit": 128
+        },
+        "runtime_grants": {
+            "run_as_root": False,
+            "network": "none",
+            "requirements": []
+        },
+        "paths": {
+            "workspace": "/veritas/work",
+            "artifacts": "/veritas/artifacts",
+            "events": "/veritas/events/events.jsonl",
+            "control": "/veritas/control"
+        },
+        "integrity": {
+            "adapter_manifest_sha256": "a" * 64,
+            "experiment_manifest_sha256": "b" * 64
+        }
+    }
+
+    request_path = input_directory / "request.json"
+
+    request_path.write_text(
+        json.dumps(request, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    return request_path
+
+
+class DockerAdapterLifecycleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        adapters = discover_adapters(
+            ADAPTER_ROOT,
+            MANIFEST_SCHEMA,
+        )
+
+        cls.adapter = adapters["mock-docker-adapter"]
+        cls.backend = DockerBackend(REQUEST_SCHEMA)
+
+        if not cls.backend.docker_available():
+            raise RuntimeError(
+                "Docker daemon is not available"
+            )
+
+        cls.image = cls.backend.build_adapter(
+            cls.adapter
+        )
+
+    def test_containerised_adapter_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            contract_root = Path(temporary)
+            request_path = create_contract_root(
+                contract_root
+            )
+
+            supervisor = DockerAdapterSupervisor(
+                backend=self.backend,
+                adapter=self.adapter,
+                image=self.image,
+                request_path=request_path,
+                contract_root=contract_root,
+                event_schema_path=EVENT_SCHEMA,
+            )
+
+            try:
+                supervisor.start()
+
+                endpoint = supervisor.wait_for_event(
+                    "endpoint_reported",
+                    timeout_seconds=10,
+                )
+
+                self.assertEqual(
+                    endpoint["endpoint"]["port"],
+                    8080,
+                )
+
+                # Reporting an endpoint must not end execution.
+                self.assertTrue(
+                    supervisor.container_running
+                )
+
+                supervisor.wait_for_event(
+                    "heartbeat",
+                    timeout_seconds=5,
+                )
+
+                self.assertTrue(
+                    supervisor.container_running
+                )
+
+                inspection = supervisor.inspect()
+
+                self.assertEqual(
+                    inspection["Image"],
+                    self.image.image_id,
+                )
+
+                self.assertEqual(
+                    inspection["Config"]["Labels"][
+                        "veritas.adapter_id"
+                    ],
+                    "mock-docker-adapter",
+                )
+
+                input_mounts = [
+                    mount
+                    for mount in inspection["Mounts"]
+                    if mount["Destination"]
+                    == "/veritas/input"
+                ]
+
+                self.assertEqual(
+                    len(input_mounts),
+                    1,
+                )
+
+                self.assertFalse(
+                    input_mounts[0]["RW"]
+                )
+
+                host_config = inspection["HostConfig"]
+
+                self.assertEqual(
+                    host_config["NetworkMode"],
+                    "none",
+                )
+
+                self.assertEqual(
+                    host_config["Memory"],
+                    268435456,
+                )
+
+                self.assertEqual(
+                    host_config["PidsLimit"],
+                    128,
+                )
+
+                # Endpoint events remain candidate claims.
+                self.assertNotIn("verified", endpoint)
+                self.assertNotIn("reachable", endpoint)
+
+                supervisor.request_shutdown()
+
+                exit_code = supervisor.wait_for_exit(
+                    timeout_seconds=5,
+                )
+
+                self.assertEqual(exit_code, 0)
+
+                event_names = [
+                    event["event"]
+                    for event in supervisor.events
+                ]
+
+                self.assertIn(
+                    "shutdown_started",
+                    event_names,
+                )
+
+                self.assertIn(
+                    "cleanup_complete",
+                    event_names,
+                )
+
+                self.assertEqual(
+                    event_names[-1],
+                    "adapter_stopped",
+                )
+
+                self.assertTrue(
+                    self.image.image_id.startswith(
+                        "sha256:"
+                    )
+                )
+
+            finally:
+                supervisor.force_terminate()
+                supervisor.remove()
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+===== REQUEST, CONTROL AND EVENT PATH REFERENCES =====
+tests/test_lifecycle_watchdog.py:79:        shutdown_grace_seconds: float = 0.1,
+tests/test_lifecycle_watchdog.py:88:                "shutdown_grace_seconds": (
+tests/test_lifecycle_watchdog.py:89:                    shutdown_grace_seconds
+tests/test_lifecycle_watchdog.py:99:        self.shutdown_reasons: list[str] = []
+tests/test_lifecycle_watchdog.py:112:    def request_shutdown(self, reason: str) -> None:
+tests/test_lifecycle_watchdog.py:113:        self.shutdown_reasons.append(reason)
+tests/test_lifecycle_watchdog.py:124:                        "shutdown_started",
+tests/test_lifecycle_watchdog.py:129:                        "cleanup_complete",
+tests/test_lifecycle_watchdog.py:134:                        "adapter_stopped",
+tests/test_lifecycle_watchdog.py:152:                "Simulated shutdown timeout"
+tests/test_lifecycle_watchdog.py:219:            "shutdown_grace_seconds": 5
+tests/test_lifecycle_watchdog.py:234:            "events": "/veritas/events/events.jsonl",
+tests/test_lifecycle_watchdog.py:235:            "control": "/veritas/control"
+tests/test_lifecycle_watchdog.py:243:    request_path = input_directory / "request.json"
+tests/test_lifecycle_watchdog.py:273:    def test_normal_container_shutdown_is_completed(
+tests/test_lifecycle_watchdog.py:314:                watchdog.request_benchmark_shutdown()
+tests/test_lifecycle_watchdog.py:332:                    "graceful_shutdown",
+tests/test_lifecycle_watchdog.py:336:                    observation.cleanup_complete_seen
+tests/test_lifecycle_watchdog.py:340:                    observation.adapter_stopped_seen
+tests/test_lifecycle_watchdog.py:408:                    "graceful_shutdown",
+tests/test_lifecycle_watchdog.py:463:                "graceful_shutdown",
+tests/test_lifecycle_watchdog.py:515:                observation.shutdown_requested
+tests/test_lifecycle_watchdog.py:523:    def test_failed_shutdown_uses_forced_termination(
+tests/test_lifecycle_watchdog.py:562:            watchdog.request_benchmark_shutdown()
+tests/test_lifecycle_watchdog.py:570:                "shutdown_failed",
+tests/test_adapter_lifecycle.py:71:            "shutdown_grace_seconds": 5
+tests/test_adapter_lifecycle.py:86:            "events": "/veritas/events/events.jsonl",
+tests/test_adapter_lifecycle.py:87:            "control": "/veritas/control"
+tests/test_adapter_lifecycle.py:95:    request_path = input_directory / "request.json"
+tests/test_adapter_lifecycle.py:105:    def test_adapter_remains_alive_until_shutdown(self) -> None:
+tests/test_adapter_lifecycle.py:146:                supervisor.request_shutdown()
+tests/test_adapter_lifecycle.py:180:                    "Adapter must emit at least one heartbeat before shutdown",
+tests/test_adapter_lifecycle.py:186:                        "shutdown_started",
+tests/test_adapter_lifecycle.py:187:                        "cleanup_complete",
+tests/test_adapter_lifecycle.py:188:                        "adapter_stopped",
+tests/test_adapter_lifecycle.py:192:                shutdown_index = event_names.index("shutdown_started")
+tests/test_adapter_lifecycle.py:197:                        for event_name in event_names[4:shutdown_index]
+tests/test_adapter_lifecycle.py:199:                    "Only heartbeat events are permitted while awaiting shutdown",
+tests/test_adapter_lifecycle.py:233:            event_path = root / "events.jsonl"
+veritas_core/run_coordinator.py:69:    shutdown_grace_seconds: int = 60
+veritas_core/run_coordinator.py:118:        if self.shutdown_grace_seconds < 1:
+veritas_core/run_coordinator.py:120:                "shutdown_grace_seconds must be positive"
+veritas_core/run_coordinator.py:417:                "shutdown_grace_seconds": (
+veritas_core/run_coordinator.py:418:                    policy.shutdown_grace_seconds
+veritas_core/run_coordinator.py:441:                    "/veritas/events/events.jsonl"
+veritas_core/run_coordinator.py:443:                "control": "/veritas/control",
+veritas_core/run_coordinator.py:456:            input_directory / "request.json"
+veritas_core/run_coordinator.py:699:            watchdog.request_benchmark_shutdown()
+veritas_core/run_coordinator.py:704:                    policy.shutdown_grace_seconds
+veritas_core/run_coordinator.py:836:            / "events.jsonl"
+veritas_core/run_coordinator.py:1008:                    "contract/input/request.json"
+veritas_core/run_coordinator.py:1011:                    "contract/events/events.jsonl"
+tests/test_independent_reachability.py:97:            "shutdown_grace_seconds": 5
+tests/test_independent_reachability.py:112:            "events": "/veritas/events/events.jsonl",
+tests/test_independent_reachability.py:113:            "control": "/veritas/control"
+tests/test_independent_reachability.py:121:    request_path = input_directory / "request.json"
+tests/test_independent_reachability.py:226:                supervisor.request_shutdown()
+tests/test_independent_reachability.py:235:                post_shutdown = probe_endpoint_event(
+tests/test_independent_reachability.py:242:                    post_shutdown.status,
+tests/test_environment_residue.py:119:            "shutdown_grace_seconds": 5
+tests/test_environment_residue.py:134:            "events": "/veritas/events/events.jsonl",
+tests/test_environment_residue.py:135:            "control": "/veritas/control"
+tests/test_environment_residue.py:143:    request_path = input_directory / "request.json"
+tests/test_environment_residue.py:364:                watchdog.request_benchmark_shutdown()
+tests/test_service_authenticity.py:163:            "shutdown_grace_seconds": 5
+tests/test_service_authenticity.py:178:            "events": "/veritas/events/events.jsonl",
+tests/test_service_authenticity.py:179:            "control": "/veritas/control"
+tests/test_service_authenticity.py:187:    request_path = input_directory / "request.json"
+tests/test_service_authenticity.py:230:            # Simulate candidate shutdown while the unrelated host
+tests/test_service_authenticity.py:232:            post_shutdown = capture_http_snapshot(event)
+tests/test_service_authenticity.py:236:                post_shutdown,
+tests/test_service_authenticity.py:246:                observation.endpoint_disappeared_after_shutdown
+tests/test_service_authenticity.py:255:            server.shutdown()
+tests/test_service_authenticity.py:271:        server.shutdown()
+tests/test_service_authenticity.py:275:        post_shutdown = capture_http_snapshot(
+tests/test_service_authenticity.py:282:            post_shutdown,
+tests/test_service_authenticity.py:292:            observation.endpoint_disappeared_after_shutdown
+tests/test_service_authenticity.py:346:                supervisor.request_shutdown()
+tests/test_service_authenticity.py:380:                    .endpoint_disappeared_after_shutdown
+veritas_core/environment_residue.py:773:            "remained after candidate shutdown"
+tests/fixtures/mock_contract_adapter.py:63:    shutdown_path = control_directory / "shutdown.json"
+tests/fixtures/mock_contract_adapter.py:124:            state="waiting_for_shutdown",
+tests/fixtures/mock_contract_adapter.py:143:        while not shutdown_path.exists():
+tests/fixtures/mock_contract_adapter.py:149:                    state="waiting_for_shutdown",
+tests/fixtures/mock_contract_adapter.py:158:            "shutdown_started",
+tests/fixtures/mock_contract_adapter.py:166:            "cleanup_complete",
+tests/fixtures/mock_contract_adapter.py:171:            "adapter_stopped",
+tests/test_compute_cost.py:102:            "shutdown_grace_seconds": 5
+tests/test_compute_cost.py:117:            "events": "/veritas/events/events.jsonl",
+tests/test_compute_cost.py:118:            "control": "/veritas/control"
+tests/test_compute_cost.py:126:    request_path = input_directory / "request.json"
+tests/test_compute_cost.py:281:                watchdog.request_benchmark_shutdown()
+veritas_core/docker_supervisor.py:46:            self.contract_root / "events" / "events.jsonl"
+veritas_core/docker_supervisor.py:49:        self.shutdown_path = (
+veritas_core/docker_supervisor.py:52:            / "shutdown.json"
+veritas_core/docker_supervisor.py:155:    def request_shutdown(
+veritas_core/docker_supervisor.py:166:            "command": "shutdown",
+veritas_core/docker_supervisor.py:171:        self.shutdown_path.parent.mkdir(
+veritas_core/docker_supervisor.py:176:        temporary_path = self.shutdown_path.with_suffix(
+veritas_core/docker_supervisor.py:185:        temporary_path.replace(self.shutdown_path)
+veritas_core/docker_supervisor.py:206:            "Container did not exit during the shutdown "
+tests/test_environment_janitor.py:324:                    "/veritas/input/request.json",
+tests/test_environment_janitor.py:342:                    "/veritas/input/request.json",
+tests/test_docker_adapter_lifecycle.py:85:            "shutdown_grace_seconds": 5
+tests/test_docker_adapter_lifecycle.py:100:            "events": "/veritas/events/events.jsonl",
+tests/test_docker_adapter_lifecycle.py:101:            "control": "/veritas/control"
+tests/test_docker_adapter_lifecycle.py:109:    request_path = input_directory / "request.json"
+tests/test_docker_adapter_lifecycle.py:233:                supervisor.request_shutdown()
+tests/test_docker_adapter_lifecycle.py:247:                    "shutdown_started",
+tests/test_docker_adapter_lifecycle.py:252:                    "cleanup_complete",
+tests/test_docker_adapter_lifecycle.py:258:                    "adapter_stopped",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:70:    shutdown_path = control_directory / "shutdown.json"
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:220:            state="waiting_for_shutdown",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:239:        while not shutdown_path.exists():
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:245:                    state="waiting_for_shutdown",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:254:            "shutdown_started",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:258:        server.shutdown()
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:263:            "cleanup_complete",
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:268:            "adapter_stopped",
+veritas_core/probe_orchestrator.py:67:    post_shutdown_snapshot: HttpServiceSnapshot
+veritas_core/probe_orchestrator.py:75:            "post_shutdown_snapshot": (
+veritas_core/probe_orchestrator.py:76:                self.post_shutdown_snapshot.to_dict()
+veritas_core/probe_orchestrator.py:183:        Perform post-shutdown checks and evaluate authenticity.
+veritas_core/probe_orchestrator.py:185:        Call only after the adapter has completed graceful shutdown or has
+veritas_core/probe_orchestrator.py:200:            post_shutdown_snapshot = capture_http_snapshot(
+veritas_core/probe_orchestrator.py:207:                post_shutdown_snapshot,
+veritas_core/probe_orchestrator.py:217:                post_shutdown_snapshot=post_shutdown_snapshot,
+tests/fixtures/mock_service_adapter.py:70:    shutdown_path = control_directory / "shutdown.json"
+tests/fixtures/mock_service_adapter.py:220:            state="waiting_for_shutdown",
+tests/fixtures/mock_service_adapter.py:239:        while not shutdown_path.exists():
+tests/fixtures/mock_service_adapter.py:245:                    state="waiting_for_shutdown",
+tests/fixtures/mock_service_adapter.py:254:            "shutdown_started",
+tests/fixtures/mock_service_adapter.py:258:        server.shutdown()
+tests/fixtures/mock_service_adapter.py:263:            "cleanup_complete",
+tests/fixtures/mock_service_adapter.py:268:            "adapter_stopped",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:63:    shutdown_path = control_directory / "shutdown.json"
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:124:            state="waiting_for_shutdown",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:143:        while not shutdown_path.exists():
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:149:                    state="waiting_for_shutdown",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:158:            "shutdown_started",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:166:            "cleanup_complete",
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:171:            "adapter_stopped",
+veritas_core/lifecycle_watchdog.py:37:    def request_shutdown(self, reason: str) -> None:
+veritas_core/lifecycle_watchdog.py:61:    shutdown_grace_seconds: float
+veritas_core/lifecycle_watchdog.py:64:    shutdown_requested: bool
+veritas_core/lifecycle_watchdog.py:65:    cleanup_complete_seen: bool
+veritas_core/lifecycle_watchdog.py:66:    adapter_stopped_seen: bool
+veritas_core/lifecycle_watchdog.py:118:        self.shutdown_grace_seconds = float(
+veritas_core/lifecycle_watchdog.py:119:            lifecycle["shutdown_grace_seconds"]
+veritas_core/lifecycle_watchdog.py:122:        self._shutdown_requested_by_core = threading.Event()
+veritas_core/lifecycle_watchdog.py:151:    def request_benchmark_shutdown(self) -> None:
+veritas_core/lifecycle_watchdog.py:155:        self._shutdown_requested_by_core.set()
+veritas_core/lifecycle_watchdog.py:256:            if event.get("event") == "cleanup_complete":
+veritas_core/lifecycle_watchdog.py:259:            if event.get("event") == "adapter_stopped":
+veritas_core/lifecycle_watchdog.py:309:        shutdown_requested = False
+veritas_core/lifecycle_watchdog.py:327:                        event_name == "adapter_stopped"
+veritas_core/lifecycle_watchdog.py:329:                        self._shutdown_requested_by_core.is_set()
+veritas_core/lifecycle_watchdog.py:333:                            "The adapter emitted adapter_stopped "
+veritas_core/lifecycle_watchdog.py:334:                            "before VERITAS requested shutdown"
+veritas_core/lifecycle_watchdog.py:343:                if self._shutdown_requested_by_core.is_set():
+veritas_core/lifecycle_watchdog.py:354:                        "VERITAS requested shutdown"
+veritas_core/lifecycle_watchdog.py:389:                shutdown_requested = True
+veritas_core/lifecycle_watchdog.py:391:                self.supervisor.request_shutdown(
+veritas_core/lifecycle_watchdog.py:398:                            self.shutdown_grace_seconds
+veritas_core/lifecycle_watchdog.py:410:                            "graceful_shutdown"
+veritas_core/lifecycle_watchdog.py:414:                            "incomplete_shutdown"
+veritas_core/lifecycle_watchdog.py:444:                and termination_mode == "graceful_shutdown"
+veritas_core/lifecycle_watchdog.py:457:                run_outcome = "shutdown_failed"
+veritas_core/lifecycle_watchdog.py:460:                    "not complete the required graceful shutdown"
+veritas_core/lifecycle_watchdog.py:499:                shutdown_grace_seconds=(
+veritas_core/lifecycle_watchdog.py:500:                    self.shutdown_grace_seconds
+veritas_core/lifecycle_watchdog.py:506:                shutdown_requested=shutdown_requested,
+veritas_core/lifecycle_watchdog.py:507:                cleanup_complete_seen=cleanup_seen,
+veritas_core/lifecycle_watchdog.py:508:                adapter_stopped_seen=stopped_seen,
+veritas_core/event_protocol.py:62:        self._adapter_stopped = False
+veritas_core/event_protocol.py:107:        if self._adapter_stopped:
+veritas_core/event_protocol.py:109:                "Adapter emitted an event after adapter_stopped"
+veritas_core/event_protocol.py:127:            "outcome": "adapter_stopped",
+veritas_core/event_protocol.py:140:        if event_name == "adapter_stopped":
+veritas_core/event_protocol.py:141:            self._adapter_stopped = True
+veritas_core/probes/service_authenticity.py:20:    endpoint_disappeared_after_shutdown: bool | None
+veritas_core/probes/service_authenticity.py:37:    post_shutdown_snapshot: HttpServiceSnapshot,
+veritas_core/probes/service_authenticity.py:61:            endpoint_disappeared_after_shutdown=None,
+veritas_core/probes/service_authenticity.py:76:            endpoint_disappeared_after_shutdown=None,
+veritas_core/probes/service_authenticity.py:80:    if post_shutdown_snapshot.status == "probe_error":
+veritas_core/probes/service_authenticity.py:87:                "VERITAS could not complete the post-shutdown "
+veritas_core/probes/service_authenticity.py:91:            endpoint_disappeared_after_shutdown=None,
+veritas_core/probes/service_authenticity.py:103:    if post_shutdown_snapshot.status == "captured":
+veritas_core/probes/service_authenticity.py:111:                "shutdown; the response cannot be attributed "
+veritas_core/probes/service_authenticity.py:115:            endpoint_disappeared_after_shutdown=False,
+veritas_core/probes/service_authenticity.py:119:    if post_shutdown_snapshot.status == "unreachable":
+veritas_core/probes/service_authenticity.py:131:                    "firmware content and disappeared after shutdown"
+veritas_core/probes/service_authenticity.py:134:                endpoint_disappeared_after_shutdown=True,
+veritas_core/probes/service_authenticity.py:144:                "The endpoint disappeared after shutdown, but its "
+veritas_core/probes/service_authenticity.py:149:            endpoint_disappeared_after_shutdown=True,
+veritas_core/probes/service_authenticity.py:159:            "Unexpected post-shutdown snapshot state: "
+veritas_core/probes/service_authenticity.py:160:            f"{post_shutdown_snapshot.status}"
+veritas_core/probes/service_authenticity.py:163:        endpoint_disappeared_after_shutdown=None,
+veritas_core/adapter_supervisor.py:56:            self.contract_root / "events" / "events.jsonl"
+veritas_core/adapter_supervisor.py:59:            self.contract_root / "control" / "shutdown.json"
+veritas_core/adapter_supervisor.py:159:    def request_shutdown(
+veritas_core/adapter_supervisor.py:168:        shutdown_document = {
+veritas_core/adapter_supervisor.py:170:            "command": "shutdown",
+veritas_core/adapter_supervisor.py:179:                shutdown_document,
+veritas_core/adapter_supervisor.py:203:                "Adapter did not exit within the shutdown grace "
+tests/test_end_to_end_coordinator.py:107:                shutdown_grace_seconds=5,
+veritas_core/docker_backend.py:525:                "dst=/veritas/events"
+veritas_core/docker_backend.py:530:                "dst=/veritas/control"
+veritas_core/docker_backend.py:567:                "/veritas/input/request.json",
+tests/test_service_stability.py:100:            "shutdown_grace_seconds": 5
+tests/test_service_stability.py:115:            "events": "/veritas/events/events.jsonl",
+tests/test_service_stability.py:116:            "control": "/veritas/control"
+tests/test_service_stability.py:124:    request_path = input_directory / "request.json"
+tests/test_service_stability.py:245:                supervisor.request_shutdown()
+
+===== EVENT WRITER DEFINITIONS =====
+veritas_core/event_protocol.py:10:class EventProtocolError(RuntimeError):
+veritas_core/event_protocol.py:21:class AdapterEventStream:
+tests/fixtures/mock_contract_adapter.py:76:        def emit(
+tests/fixtures/docker-probe-adapters/mock-service-adapter/mock_service_adapter.py:88:        def emit(
+tests/fixtures/mock_service_adapter.py:88:        def emit(
+tests/fixtures/docker-adapters/mock-docker-adapter/mock_contract_adapter.py:76:        def emit(

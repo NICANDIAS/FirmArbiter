@@ -20,7 +20,7 @@ Usage (standalone, for testing):
 
     python probes/probe_service.py --ip 192.168.0.1 --port 80
 
-Usage (called from run_veritas.py):
+Usage (called from run_firmarbiter.py):
 
     from probes.probe_service import probe_service
     result = probe_service(reported_ip="192.168.0.1", reported_port=80)
@@ -124,7 +124,7 @@ def _fetch_http(ip: str, port: int) -> dict:
             verify=False,
             # A generic browser-like user agent avoids some firmware
             # servers that return 403 for unknown agents
-            headers={"User-Agent": "Mozilla/5.0 (compatible; VERITAS/1.0)"},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; FIRMARBITER/1.0)"},
             # Do not follow redirects automatically — we want to see the
             # raw response from the reported address, not where it points
             allow_redirects=False,
@@ -177,7 +177,7 @@ def probe_service(reported_ip: str, reported_port: int = 80) -> dict:
     Main entry point. Probe the service at reported_ip:reported_port and
     return a result dict that matches the 'service' block in result_schema.json.
 
-    This function is called by run_veritas.py after the candidate tool has
+    This function is called by run_firmarbiter.py after the candidate tool has
     declared that a service is reachable. It does not trust that declaration —
     it verifies independently.
 

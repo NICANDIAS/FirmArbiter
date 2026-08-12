@@ -1,0 +1,4 @@
+37d7a80604871e579850a658c7add2ae7557d0c6abcc9b31ecddc4424207eba3  /home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/work/firmae-scratch/1/ip.0
+21d130ee4eefafa8fffeaa6f49c951f487075599038f661966127061c32accf6  /home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/work/firmae-scratch/1/qemu.final.serial.log
+ab23b2e6db3cb98ba1752be2371a5c8c41fac2e00923832de40c96ce84ac8d4d  /home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/work/firmae-scratch/1/run.sh
+05129ac2744ce98461e9d45fe7e7d895eea4ac7ce0d477f2cdcbff26ba208ec8  /home/ubuntu/veritas-run-data/firmae/20260626T035952Z--adapter-managed-full/work/firmae-scratch/1/current_init

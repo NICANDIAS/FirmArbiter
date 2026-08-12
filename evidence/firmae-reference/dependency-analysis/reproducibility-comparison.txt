@@ -1,0 +1,23 @@
+FIRMAE DEPENDENCY REPRODUCIBILITY COMPARISON
+Collected UTC: 2026-06-25T23:20:14+00:00
+
+Checking source commit...
+  MATCH
+
+Checking complete adapter build inputs...
+  MATCH
+
+Checking dependency provenance...
+  ubuntu-snapshot.txt                       MATCH
+  apt-sources.list                          MATCH
+  apt-snapshot.conf                         MATCH
+  apt-direct.txt                            MATCH
+  base-apt-version.txt                      MATCH
+  base-snapshot-compatibility.tsv           MATCH
+  apt-direct-lock.tsv                       MATCH
+  apt-installed-lock.tsv                    MATCH
+  apt-manual-packages.txt                   MATCH
+  ca-bootstrap.txt                          MATCH
+  dependency-files.sha256                   MATCH
+
+RESULT: identical dependency resolution from identical build inputs.

@@ -1,0 +1,12 @@
+a9d6243857e873f4c87578af6e70cd886113186856d227bf6cfbaf0d39838794  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-direct-lock.tsv
+4876529083d1fad41763fb16d253232f6202b512de8c70a53bd6d845ea1de1ec  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-direct.txt
+96619bbc1da857fd48bbf717ffb472b2e89eef88b6a875ffb084afb56537d7c1  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-installed-lock.tsv
+6d9bb2d643b23d10feefe9b9d82ab155088000cd460b7d0441bd027ecfbb222f  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-manual-packages.txt
+8a75c7395f0763699c6b8c89a24574965444cf93a46783d9d62c49c019290271  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-policy.txt
+feed437c9259cc2c9f68767442090812533aefec68731c2bc2231d4e35f499e7  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-snapshot.conf
+d72a0b1c7c027e988220cc2b56eb54c07e022dc0d1caab269a3751006a635247  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/apt-sources.list
+3566f439c19e0dcb89a43d6e1a3437d53363d5832ed0a4c05164aadb42f55fa4  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/base-apt-version.txt
+9b1d6d18f5da5518a353b9c370ce1d70deac654c345bc0927481ca3dc610b28a  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/base-snapshot-compatibility.tsv
+cbd8fc79d959a2fe61b1703a8e7ba36f1196eed5282cbb3c0942c59309f7578f  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/ca-bootstrap.txt
+ed801adb157ad8c00510682695a5b420792a64400ca49abddfbc3eeef99a18c5  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/dependency-files.sha256
+51e75470b6b82a7843010d62d4a33004b2ea1c5aeee174f6dfde2d8f4145866d  evidence/firmae-reference/dependency-analysis/repro-build-a/provenance/ubuntu-snapshot.txt

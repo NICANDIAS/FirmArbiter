@@ -12,8 +12,8 @@ inaccurate results:
   2. Orphaned QEMU processes — these consume CPU and memory and can
      interfere with subsequent runs.
 
-  3. Leftover VERITAS containers — containers started by VERITAS that
-     were not stopped cleanly. Identified by the "veritas/" image prefix.
+  3. Leftover FIRMARBITER containers — containers started by FIRMARBITER that
+     were not stopped cleanly. Identified by the "firmarbiter/" image prefix.
 
 If anything is found, it is recorded in the result and then forcibly
 removed so the next run always starts from a clean state regardless of
@@ -52,12 +52,12 @@ def _get_orphan_qemu_pids() -> list:
         return []
 
 
-def _get_leftover_veritas_containers() -> list:
+def _get_leftover_firmarbiter_containers() -> list:
     """
-    Return IDs of Docker containers started from a VERITAS image
-    (images named veritas/<candidate>) that are still running.
+    Return IDs of Docker containers started from a FIRMARBITER image
+    (images named firmarbiter/<candidate>) that are still running.
 
-    We only report containers from VERITAS images — not any other
+    We only report containers from FIRMARBITER images — not any other
     containers that may legitimately be running on the machine.
     """
     try:
@@ -72,7 +72,7 @@ def _get_leftover_veritas_containers() -> list:
             if len(parts) >= 2:
                 container_id = parts[0]
                 image_name   = parts[1]
-                if image_name.startswith("veritas/"):
+                if image_name.startswith("firmarbiter/"):
                     leftover.append(container_id)
         return leftover
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -97,8 +97,8 @@ def _kill_qemu_processes(pids: list):
         )
 
 
-def _stop_veritas_containers(container_ids: list):
-    """Force-stop leftover VERITAS containers."""
+def _stop_firmarbiter_containers(container_ids: list):
+    """Force-stop leftover FIRMARBITER containers."""
     for cid in container_ids:
         subprocess.run(
             ["docker", "stop", "--time", "5", cid],
@@ -142,7 +142,7 @@ def probe_cleanup(candidate_name: str, force_clean: bool = True) -> dict:
         Name of the tool that just ran, used for logging only.
     force_clean : bool
         If True, remove stale TAP devices, kill orphan QEMU processes,
-        and stop leftover VERITAS containers after recording them.
+        and stop leftover FIRMARBITER containers after recording them.
 
     Returns
     -------
@@ -151,7 +151,7 @@ def probe_cleanup(candidate_name: str, force_clean: bool = True) -> dict:
     """
     stale_taps          = _get_stale_tap_devices()
     orphan_qemus        = _get_orphan_qemu_pids()
-    leftover_containers = _get_leftover_veritas_containers()
+    leftover_containers = _get_leftover_firmarbiter_containers()
 
     result = {
         "stale_tap_devices":        stale_taps,
@@ -170,6 +170,6 @@ def probe_cleanup(candidate_name: str, force_clean: bool = True) -> dict:
         if orphan_qemus:
             _kill_qemu_processes(orphan_qemus)
         if leftover_containers:
-            _stop_veritas_containers(leftover_containers)
+            _stop_firmarbiter_containers(leftover_containers)
 
     return result

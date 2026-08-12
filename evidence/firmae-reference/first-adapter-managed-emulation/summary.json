@@ -1,0 +1,34 @@
+{
+  "adapter_id": "firmae",
+  "candidate_boot_reported_at": "2026-06-26T04:42:53.730491Z",
+  "container_exit_code": "0",
+  "endpoint_reported_count": 0,
+  "error_event_count": 0,
+  "event_count": 552,
+  "event_counts": {
+    "adapter_started": 1,
+    "adapter_stopped": 1,
+    "candidate_boot_reported": 1,
+    "candidate_started": 1,
+    "cleanup_complete": 1,
+    "extraction_complete": 1,
+    "heartbeat": 545,
+    "shutdown_started": 1
+  },
+  "experiment_id": "firmae-adapter-managed-emulation",
+  "firmware": {
+    "case_id": "first-real-firmware",
+    "sha256": "43fa019667a8af43dee18c901beac5206dfe00cda3c2708df1049cc3d2675263",
+    "size_bytes": 13581763
+  },
+  "independent_measurement_present": true,
+  "requested_stages": [
+    "unpack",
+    "emulate",
+    "endpoint-discovery"
+  ],
+  "required_events_missing": [],
+  "run_id": "firmae-full-20260626T035952Z",
+  "terminal_event": "adapter_stopped",
+  "terminal_outcome": "completed"
+}

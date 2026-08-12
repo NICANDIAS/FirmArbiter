@@ -1,0 +1,137 @@
+=== POSTGRESQL PACKAGES ===
+postgresql	14+238	all
+postgresql-14	14.23-0ubuntu0.22.04.1	amd64
+postgresql-14-jit-llvm		
+postgresql-9.1		
+postgresql-client	14+238	all
+postgresql-client-14	14.23-0ubuntu0.22.04.1	amd64
+postgresql-client-common	238	all
+postgresql-common	238	all
+postgresql-contrib-14		
+postgresql-doc		
+postgresql-doc-14		
+postgresql-pgmp		
+postgresql-server-dev-all		
+
+=== COMMANDS ===
+postgres          not found
+initdb            not found
+pg_ctl            not found
+pg_ctlcluster     /usr/bin/pg_ctlcluster
+pg_lsclusters     /usr/bin/pg_lsclusters
+pg_isready        /usr/bin/pg_isready
+psql              /usr/bin/psql
+createdb          /usr/bin/createdb
+createuser        /usr/bin/createuser
+
+=== REGISTERED CLUSTERS ===
+Ver Cluster Port Status Owner    Data directory              Log file
+14  main    5432 down   postgres /var/lib/postgresql/14/main /var/log/postgresql/postgresql-14-main.log
+
+=== POSTGRESQL VERSIONS ===
+14
+
+=== DATA DIRECTORIES ===
+-rw------- postgres:postgres /var/lib/postgresql/14/main/PG_VERSION
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1213
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1213_fsm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1213_vm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1214
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1214_fsm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1214_vm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1232
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1233
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1260
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1260_fsm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1260_vm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1261
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1261_fsm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1261_vm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1262
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1262_fsm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/1262_vm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2396
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2396_fsm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2396_vm
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2397
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2671
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2672
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2676
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2677
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2694
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2695
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2697
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2698
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2846
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2847
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2964
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2965
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2966
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/2967
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/3592
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/3593
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4060
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4061
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4175
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4176
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4177
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4178
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4181
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4182
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4183
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4184
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4185
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/4186
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/6000
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/6001
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/6002
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/6100
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/6114
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/6115
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/pg_control
+-rw------- postgres:postgres /var/lib/postgresql/14/main/global/pg_filenode.map
+-rw------- postgres:postgres /var/lib/postgresql/14/main/pg_logical/replorigin_checkpoint
+-rw------- postgres:postgres /var/lib/postgresql/14/main/pg_subtrans/0000
+-rw------- postgres:postgres /var/lib/postgresql/14/main/pg_wal/000000010000000000000001
+-rw------- postgres:postgres /var/lib/postgresql/14/main/pg_xact/0000
+-rw------- postgres:postgres /var/lib/postgresql/14/main/postgresql.auto.conf
+drwx------ postgres:postgres /var/lib/postgresql/14/main
+drwx------ postgres:postgres /var/lib/postgresql/14/main/base
+drwx------ postgres:postgres /var/lib/postgresql/14/main/base/1
+drwx------ postgres:postgres /var/lib/postgresql/14/main/base/13758
+drwx------ postgres:postgres /var/lib/postgresql/14/main/base/13759
+drwx------ postgres:postgres /var/lib/postgresql/14/main/global
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_commit_ts
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_dynshmem
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_logical
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_logical/mappings
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_logical/snapshots
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_multixact
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_multixact/members
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_multixact/offsets
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_notify
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_replslot
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_serial
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_snapshots
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_stat
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_stat_tmp
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_subtrans
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_tblspc
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_twophase
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_wal
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_wal/archive_status
+drwx------ postgres:postgres /var/lib/postgresql/14/main/pg_xact
+drwxr-xr-x postgres:postgres /var/lib/postgresql
+drwxr-xr-x postgres:postgres /var/lib/postgresql/14
+
+=== CONFIGURATION FILES ===
+/etc/postgresql/14/main/environment
+/etc/postgresql/14/main/pg_ctl.conf
+/etc/postgresql/14/main/pg_hba.conf
+/etc/postgresql/14/main/pg_ident.conf
+/etc/postgresql/14/main/postgresql.conf
+/etc/postgresql/14/main/start.conf
+
+=== POSTGRES ACCOUNT ===
+postgres:x:102:108:PostgreSQL administrator,,,:/var/lib/postgresql:/bin/bash
+postgres:x:108:

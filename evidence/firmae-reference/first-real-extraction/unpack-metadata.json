@@ -1,0 +1,33 @@
+{
+  "adapter_id": "firmae",
+  "brand": "dlink",
+  "case_id": "first-real-firmware",
+  "completed_at": "2026-06-26T00:45:54.465486Z",
+  "firmae_image_id": 1,
+  "kernel": {
+    "path": "kernel.bin",
+    "present": true,
+    "sha256": "6acf27d6a0223b6092344382dfd9b3f96cf9ffe68bcb6bc09d5e0abf450f8dde",
+    "size_bytes": 4844896
+  },
+  "logs": [
+    "rootfs-extractor.log",
+    "kernel-extractor.log"
+  ],
+  "operation": "unpack",
+  "rootfs": {
+    "path": "rootfs.tar.gz",
+    "sha256": "20cf6e2962f80ef074ba4c0e9a81cf429cc3642b04c9c67e50c786e88b9b0f49",
+    "size_bytes": 14739487
+  },
+  "schema_version": "1.0",
+  "source_firmware": {
+    "sha256": "43fa019667a8af43dee18c901beac5206dfe00cda3c2708df1049cc3d2675263",
+    "size_bytes": 13581763
+  },
+  "started_at": "2026-06-26T00:45:11.907927Z",
+  "timings_seconds": {
+    "kernel_extraction": 20.409555509999336,
+    "rootfs_extraction": 21.502124337996065
+  }
+}

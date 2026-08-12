@@ -1,0 +1,41 @@
+schema_version: '1.0'
+adapter:
+  id: emba
+  display_name: EMBA Adapter
+  description: FIRMARBITER reference adapter for EMBA, built on the official maintainer-published image with EMBA's source pinned at a specific commit
+  version: 0.3.0
+  contract_version: '1.0'
+candidate:
+  name: EMBA
+  source:
+    type: git
+    repository: https://github.com/e-m-b-a/emba.git
+    commit: 5496d5c0782190f6dfad7cfd598d5826a1b4d620
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+  - embeddedanalyzer/emba:2.0.2b@sha256:db3d2023e842d1cc1f7a5645608f4c3fcb49daacc1a514a1b83a78d3a0465e53
+runtime:
+  run_as_root: true
+  network: none
+  requirements:
+  - full-privileged
+capabilities:
+  stages:
+  - unpack
+  - static-analysis
+  firmware_architectures:
+  - arm
+  - arm64
+  - mips
+  - mipsel
+  - x86
+  - x86_64
+  - powerpc
+  - unknown
+  endpoint_protocols: []
+  hints:
+    architecture: optional
+    vendor: optional

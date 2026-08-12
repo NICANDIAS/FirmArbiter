@@ -1,6 +1,6 @@
 # candidates/firmae/Dockerfile
-# VERITAS FirmAE Docker image.
-# Builds FirmAE, then applies the VERITAS Docker partition fix after install.sh.
+# FIRMARBITER FirmAE Docker image.
+# Builds FirmAE, then applies the FIRMARBITER Docker partition fix after install.sh.
 
 FROM ubuntu:22.04
 
@@ -9,8 +9,8 @@ ENV TZ=UTC
 
 ARG TOOL_REPO=https://github.com/pr0v3rbs/FirmAE.git
 
-RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99veritas && \
-    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/99veritas
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99firmarbiter && \
+    echo 'Acquire::http::Pipeline-Depth "0";' >> /etc/apt/apt.conf.d/99firmarbiter
 
 RUN apt-get update -qq || true && \
     apt-get install -y --no-install-recommends --fix-missing \
@@ -26,7 +26,7 @@ WORKDIR /opt
 
 RUN git clone --depth 1 "$TOOL_REPO" firmae && \
     cd firmae && \
-    git rev-parse HEAD > .veritas_commit
+    git rev-parse HEAD > .firmarbiter_commit
 
 WORKDIR /opt/firmae
 
@@ -34,11 +34,11 @@ RUN bash ./download.sh 2>/dev/null || true
 
 RUN bash ./install.sh 2>/dev/null || true
 
-# VERITAS permanent FirmAE Docker partition fix.
+# FIRMARBITER permanent FirmAE Docker partition fix.
 # This is applied after install.sh because install.sh may rewrite firmae.config.
-COPY veritas_patch_firmae_config.py /tmp/veritas_patch_firmae_config.py
+COPY firmarbiter_patch_firmae_config.py /tmp/firmarbiter_patch_firmae_config.py
 
-RUN python3 /tmp/veritas_patch_firmae_config.py && \
+RUN python3 /tmp/firmarbiter_patch_firmae_config.py && \
     grep -n "SYSDEV=\"/sys/block" /opt/firmae/firmae.config && \
     grep -n "mknod.*DEV_PATH" /opt/firmae/firmae.config && \
     grep -n "kpartx -avs" /opt/firmae/firmae.config

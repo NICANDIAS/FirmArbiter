@@ -21,11 +21,11 @@ WORKDIR /opt
 
 RUN if [ "$TOOL_SOURCE" = "git" ]; then \
         git clone --depth 1 "$TOOL_REPO" pipeline && \
-        cd pipeline && git rev-parse HEAD > .veritas_commit; \
+        cd pipeline && git rev-parse HEAD > .firmarbiter_commit; \
     else \
         echo "local mode: pipeline must be mounted at runtime" && \
         mkdir -p /opt/pipeline && \
-        echo "local-build" > /opt/pipeline/.veritas_commit; \
+        echo "local-build" > /opt/pipeline/.firmarbiter_commit; \
     fi
 
 WORKDIR /opt/pipeline

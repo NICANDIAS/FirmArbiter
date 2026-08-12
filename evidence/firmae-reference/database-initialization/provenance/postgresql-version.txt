@@ -1,0 +1,1 @@
+postgres (PostgreSQL) 14.23 (Ubuntu 14.23-0ubuntu0.22.04.1)
