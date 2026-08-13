@@ -25,6 +25,7 @@ import re
 import sys
 import time
 import shutil
+import subprocess
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -910,6 +911,29 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--source-repo",
+        default=None,
+        metavar="URL",
+        help=(
+            "Used with --new-adapter: fetch the real, current HEAD "
+            "commit SHA from this git repository URL to pre-fill the "
+            "scaffolded adapter.yaml, instead of a placeholder. "
+            "Deliberately opt-in — you still choose the real source "
+            "repo; this just saves manually looking up the SHA."
+        ),
+    )
+    parser.add_argument(
+        "--base-image",
+        default=None,
+        metavar="IMAGE:TAG",
+        help=(
+            "Used with --new-adapter: pull this image and resolve its "
+            "real @sha256 digest to pre-fill the scaffolded "
+            "adapter.yaml's base_images entry, instead of a "
+            "placeholder."
+        ),
+    )
+    parser.add_argument(
         "--fail-fast",
         action="store_true",
         help="Stop the batch after the first coordinator exception",
@@ -944,7 +968,90 @@ def list_adapters(adapters: dict[str, AdapterRecord]) -> None:
         print(f"    Manifest:     {record.manifest_path}")
         print()
 
-def scaffold_new_adapter(name: str, adapters_dir: Path) -> int:
+def fetch_commit_sha(repo_url: str, *, timeout: int = 15) -> str | None:
+    """
+    Real, bounded network call: resolve the current HEAD commit SHA of a
+    git repository. Never raises — any failure (bad URL, no network,
+    timeout) returns None so the caller can fall back to a placeholder
+    rather than crash the whole scaffold over a network hiccup.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", repo_url, "HEAD"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            print(
+                f"[FIRMARBITER] WARNING: could not reach {repo_url} "
+                f"({result.stderr.strip()[:200]}) — using a placeholder "
+                f"commit SHA instead.",
+                file=sys.stderr,
+            )
+            return None
+        first_line = result.stdout.strip().splitlines()[0]
+        sha = first_line.split()[0]
+        if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+            return sha
+        return None
+    except (subprocess.TimeoutExpired, OSError, IndexError) as exc:
+        print(
+            f"[FIRMARBITER] WARNING: could not resolve HEAD for "
+            f"{repo_url} ({exc}) — using a placeholder commit SHA "
+            f"instead.",
+            file=sys.stderr,
+        )
+        return None
+
+
+def fetch_image_digest(image_ref: str, *, timeout: int = 120) -> str | None:
+    """
+    Real, bounded network call: pull an image and resolve its real
+    @sha256 digest. Never raises — any failure returns None so the
+    caller can fall back to a placeholder.
+    """
+    try:
+        pull = subprocess.run(
+            ["docker", "pull", image_ref],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if pull.returncode != 0:
+            print(
+                f"[FIRMARBITER] WARNING: could not pull {image_ref} "
+                f"({pull.stderr.strip()[:200]}) — using a placeholder "
+                f"base image digest instead.",
+                file=sys.stderr,
+            )
+            return None
+        inspect = subprocess.run(
+            [
+                "docker", "inspect", image_ref,
+                "--format", "{{index .RepoDigests 0}}",
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        if inspect.returncode != 0:
+            return None
+        digest_ref = inspect.stdout.strip()
+        if "@sha256:" in digest_ref:
+            return digest_ref
+        return None
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        print(
+            f"[FIRMARBITER] WARNING: could not resolve digest for "
+            f"{image_ref} ({exc}) — using a placeholder base image "
+            f"digest instead.",
+            file=sys.stderr,
+        )
+        return None
+
+
+def scaffold_new_adapter(
+    name: str,
+    adapters_dir: Path,
+    *,
+    source_repo: str | None = None,
+    base_image: str | None = None,
+) -> int:
     """
     Copy the real adapter template into adapters/<name>/ and generate a
     genuinely schema-valid starter adapter.yaml — not the stale
@@ -1040,6 +1147,58 @@ ENTRYPOINT ["python3", "./entrypoint.py"]
 '''
     (target_dir / "Dockerfile").write_text(dockerfile_content, encoding="utf-8")
 
+    # Resolve real values via optional, bounded network calls when the
+    # caller opted in — falling back to clearly-marked placeholders on
+    # any failure. Never let a network hiccup block scaffolding.
+    resolved_commit = None
+    if source_repo:
+        print(f"[FIRMARBITER] Resolving current HEAD commit for {source_repo} ...")
+        resolved_commit = fetch_commit_sha(source_repo)
+        if resolved_commit:
+            print(f"[FIRMARBITER] Resolved commit: {resolved_commit}")
+
+    resolved_digest_ref = None
+    if base_image:
+        print(f"[FIRMARBITER] Resolving real digest for {base_image} ...")
+        resolved_digest_ref = fetch_image_digest(base_image)
+        if resolved_digest_ref:
+            print(f"[FIRMARBITER] Resolved digest: {resolved_digest_ref}")
+
+    if source_repo and resolved_commit:
+        repository_line = f'"{source_repo}"'
+        commit_line = f'"{resolved_commit}"'
+        commit_comment = (
+            "    # Real, resolved HEAD commit at scaffold time — confirm "
+            "this is still the commit you intend to pin before building."
+        )
+    else:
+        repository_line = '"FILL IN: https://github.com/example/your-tool"'
+        commit_line = '"0000000000000000000000000000000000000000"'
+        commit_comment = (
+            "    # Must be a full 40-character commit SHA, not a branch "
+            "name — pin an\n    # exact commit for reproducibility. This "
+            "placeholder will FAIL\n    # validation until replaced with "
+            "a real commit hash."
+        )
+
+    if base_image and resolved_digest_ref:
+        base_image_line = f'  - "{resolved_digest_ref}"'
+        base_image_comment = (
+            "  # Real, resolved digest at scaffold time — confirm this "
+            "is still the base\n  # image you intend to use before "
+            "building."
+        )
+    else:
+        base_image_line = (
+            '  - "ubuntu:22.04@sha256:'
+            '0000000000000000000000000000000000000000000000000000000000000000"'
+        )
+        base_image_comment = (
+            "  # Must be pinned by @sha256 digest, not just a tag — tags "
+            "can be\n  # repointed. This placeholder will FAIL "
+            "validation until replaced."
+        )
+
     # A genuinely schema-valid starter manifest — structure verified
     # directly against schemas/adapter-manifest-v1.schema.json and a
     # real, currently-passing manifest (adapters/emba/adapter.yaml),
@@ -1056,19 +1215,16 @@ candidate:
   name: "FILL IN: real candidate tool display name"
   source:
     type: git
-    repository: "FILL IN: https://github.com/example/your-tool"
-    # Must be a full 40-character commit SHA, not a branch name — pin an
-    # exact commit for reproducibility. This placeholder will FAIL
-    # validation until replaced with a real commit hash.
-    commit: "0000000000000000000000000000000000000000"
+    repository: {repository_line}
+{commit_comment}
+    commit: {commit_line}
 build:
   context: .
   dockerfile: Dockerfile
   platform: linux/amd64
   base_images:
-  # Must be pinned by @sha256 digest, not just a tag — tags can be
-  # repointed. This placeholder will FAIL validation until replaced.
-  - "ubuntu:22.04@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+{base_image_comment}
+{base_image_line}
 runtime:
   run_as_root: true
   network: none
@@ -1137,7 +1293,12 @@ def main() -> int:
 
     try:
         if args.new_adapter:
-            return scaffold_new_adapter(args.new_adapter, ADAPTERS_ROOT)
+            return scaffold_new_adapter(
+                args.new_adapter,
+                ADAPTERS_ROOT,
+                source_repo=args.source_repo,
+                base_image=args.base_image,
+            )
 
         all_adapters = discover_validated_adapters()
         if args.list_candidates:
