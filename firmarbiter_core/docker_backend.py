@@ -225,7 +225,7 @@ class DockerBackend:
         ] = built_image
         return built_image
 
-def build_neutral_probe_image(
+    def build_neutral_probe_image(
         self,
     ) -> BuiltProbeImage:
         if self._neutral_probe_image is not None:
@@ -300,7 +300,7 @@ def build_neutral_probe_image(
         self._neutral_probe_image = built
         return built
 
-def inspect_image(
+    def inspect_image(
         self,
         image_reference: str,
     ) -> dict[str, Any]:
@@ -934,9 +934,9 @@ def inspect_image(
         )
         return completed.stdout, completed.stderr
 
-    def remove_container(self, container_id: str) -> None:
-        self._run(
-            ["container", "rm", "--force", container_id],
-            check=False,
-            timeout=30,
-        )
+def remove_container(self, container_id: str) -> None:
+    self._run(
+        ["container", "rm", "--force", container_id],
+        check=False,
+        timeout=30,
+    )
