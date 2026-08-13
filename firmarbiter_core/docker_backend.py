@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import fcntl
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -224,12 +225,11 @@ class DockerBackend:
         ] = built_image
         return built_image
 
-    def build_neutral_probe_image(
+def build_neutral_probe_image(
         self,
     ) -> BuiltProbeImage:
         if self._neutral_probe_image is not None:
             return self._neutral_probe_image
-
         context_path = Path(__file__).resolve().parent
         dockerfile_path = (
             context_path
@@ -239,22 +239,26 @@ class DockerBackend:
         image_reference = (
             "firmarbiter-neutral-network-probe:1.0.0"
         )
-
-        self._run(
-            [
-                "build",
-                "--pull",
-                "--file",
-                str(dockerfile_path),
-                "--tag",
-                image_reference,
-                str(context_path),
-            ],
-            timeout=1200,
-        )
-
-        image_data = self.inspect_image(image_reference)
-        image_id = image_data.get("Id")
+        lock_path = context_path / ".probe-build.lock"
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                self._run(
+                    [
+                        "build",
+                        "--pull",
+                        "--file",
+                        str(dockerfile_path),
+                        "--tag",
+                        image_reference,
+                        str(context_path),
+                    ],
+                    timeout=1200,
+                )
+                image_data = self.inspect_image(image_reference)
+                image_id = image_data.get("Id")
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
         if not isinstance(image_id, str):
             raise DockerBackendError(
