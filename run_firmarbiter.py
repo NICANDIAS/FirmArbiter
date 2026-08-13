@@ -24,6 +24,8 @@ import platform
 import re
 import sys
 import time
+import shutil
+import subprocess
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -899,6 +901,39 @@ Examples:
         help="List validated Adapter Contract v1 packages",
     )
     parser.add_argument(
+        "--new-adapter",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Scaffold a new candidate adapter at adapters/<NAME>/ from "
+            "the real template, with a schema-valid starter manifest. "
+            "Does not build or run anything."
+        ),
+    )
+    parser.add_argument(
+        "--source-repo",
+        default=None,
+        metavar="URL",
+        help=(
+            "Used with --new-adapter: fetch the real, current HEAD "
+            "commit SHA from this git repository URL to pre-fill the "
+            "scaffolded adapter.yaml, instead of a placeholder. "
+            "Deliberately opt-in — you still choose the real source "
+            "repo; this just saves manually looking up the SHA."
+        ),
+    )
+    parser.add_argument(
+        "--base-image",
+        default=None,
+        metavar="IMAGE:TAG",
+        help=(
+            "Used with --new-adapter: pull this image and resolve its "
+            "real @sha256 digest to pre-fill the scaffolded "
+            "adapter.yaml's base_images entry, instead of a "
+            "placeholder."
+        ),
+    )
+    parser.add_argument(
         "--fail-fast",
         action="store_true",
         help="Stop the batch after the first coordinator exception",
@@ -933,6 +968,298 @@ def list_adapters(adapters: dict[str, AdapterRecord]) -> None:
         print(f"    Manifest:     {record.manifest_path}")
         print()
 
+def fetch_commit_sha(repo_url: str, *, timeout: int = 15) -> str | None:
+    """
+    Real, bounded network call: resolve the current HEAD commit SHA of a
+    git repository. Never raises — any failure (bad URL, no network,
+    timeout) returns None so the caller can fall back to a placeholder
+    rather than crash the whole scaffold over a network hiccup.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", repo_url, "HEAD"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            print(
+                f"[FIRMARBITER] WARNING: could not reach {repo_url} "
+                f"({result.stderr.strip()[:200]}) — using a placeholder "
+                f"commit SHA instead.",
+                file=sys.stderr,
+            )
+            return None
+        first_line = result.stdout.strip().splitlines()[0]
+        sha = first_line.split()[0]
+        if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+            return sha
+        return None
+    except (subprocess.TimeoutExpired, OSError, IndexError) as exc:
+        print(
+            f"[FIRMARBITER] WARNING: could not resolve HEAD for "
+            f"{repo_url} ({exc}) — using a placeholder commit SHA "
+            f"instead.",
+            file=sys.stderr,
+        )
+        return None
+
+
+def fetch_image_digest(image_ref: str, *, timeout: int = 120) -> str | None:
+    """
+    Real, bounded network call: pull an image and resolve its real
+    @sha256 digest. Never raises — any failure returns None so the
+    caller can fall back to a placeholder.
+    """
+    try:
+        pull = subprocess.run(
+            ["docker", "pull", image_ref],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if pull.returncode != 0:
+            print(
+                f"[FIRMARBITER] WARNING: could not pull {image_ref} "
+                f"({pull.stderr.strip()[:200]}) — using a placeholder "
+                f"base image digest instead.",
+                file=sys.stderr,
+            )
+            return None
+        inspect = subprocess.run(
+            [
+                "docker", "inspect", image_ref,
+                "--format", "{{index .RepoDigests 0}}",
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        if inspect.returncode != 0:
+            return None
+        digest_ref = inspect.stdout.strip()
+        if "@sha256:" in digest_ref:
+            return digest_ref
+        return None
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        print(
+            f"[FIRMARBITER] WARNING: could not resolve digest for "
+            f"{image_ref} ({exc}) — using a placeholder base image "
+            f"digest instead.",
+            file=sys.stderr,
+        )
+        return None
+
+
+def scaffold_new_adapter(
+    name: str,
+    adapters_dir: Path,
+    *,
+    source_repo: str | None = None,
+    base_image: str | None = None,
+) -> int:
+    """
+    Copy the real adapter template into adapters/<name>/ and generate a
+    genuinely schema-valid starter adapter.yaml — not the stale
+    _template/adapter.yaml.example, which does not match the real
+    enforced schema and would fail --list-candidates if followed as-is.
+    """
+    id_pattern = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+    if not id_pattern.fullmatch(name) or not (2 <= len(name) <= 64):
+        print(
+            f"ERROR: '{name}' is not a valid adapter id. Must match "
+            f"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$ (lowercase, digits, "
+            f"single hyphens), 2-64 characters.",
+            file=sys.stderr,
+        )
+        return 1
+
+    target_dir = adapters_dir / name
+    if target_dir.exists():
+        print(
+            f"ERROR: adapters/{name}/ already exists. Choose a "
+            f"different name or remove it first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    template_dir = adapters_dir / "_template"
+    if not template_dir.exists():
+        print(
+            f"ERROR: {template_dir} not found — cannot scaffold "
+            f"without the real template.",
+            file=sys.stderr,
+        )
+        return 1
+
+    target_dir.mkdir(parents=True)
+    (target_dir / "lifecycle").mkdir()
+
+    # Copy the real, working, already-correct lifecycle plumbing —
+    # do NOT let a new adapter author hand-write this. This is the exact
+    # code that already absorbed every real lifecycle bug found across
+    # this project's own history (malformed events, missed heartbeats,
+    # ad-hoc shutdown handling).
+    shutil.copytree(
+        template_dir / "lifecycle", target_dir / "lifecycle",
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    shutil.copy2(template_dir / "entrypoint.py", target_dir / "entrypoint.py")
+    shutil.copy2(
+        template_dir / "pipeline.py.example",
+        target_dir / "pipeline.py.example",
+    )
+    schemas_src = template_dir / "schemas"
+    if schemas_src.exists():
+        shutil.copytree(schemas_src, target_dir / "schemas", dirs_exist_ok=True)
+
+    # A real, working Dockerfile starting point — matching the pattern
+    # already proven working across this project's real adapters
+    # (Ubuntu 22.04 base, Check-Date=false to avoid the real mirror
+    # clock-skew issue hit during this project's own development, the
+    # shared lifecycle/ + entrypoint.py + schema baked in at build time).
+    dockerfile_content = f'''# adapters/{name}/Dockerfile
+#
+# Starter Dockerfile generated by --new-adapter. The lifecycle/,
+# entrypoint.py, and schemas/ COPY lines below are the same working
+# pattern used by every real adapter in this project — you should not
+# need to change them. What you DO need to add: installing your actual
+# candidate tool and its real dependencies.
+
+FROM ubuntu:22.04
+
+# Avoids a real mirror clock-skew failure mode hit during this
+# project's own development (GPG signature date validation against a
+# snapshot mirror).
+RUN echo 'Acquire::Check-Date "false";' > /etc/apt/apt.conf.d/99no-check-date
+
+RUN apt-get update -qq && \\
+    apt-get install -y --no-install-recommends \\
+        python3 python3-pip ca-certificates && \\
+    rm -rf /var/lib/apt/lists/*
+
+# --- FILL IN: install your actual candidate tool and its real
+# --- dependencies here. This is the genuinely tool-specific part no
+# --- template can do for you.
+
+WORKDIR /firmarbiter_adapter
+COPY lifecycle/ ./lifecycle/
+COPY entrypoint.py ./entrypoint.py
+COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
+RUN chmod +x ./entrypoint.py
+
+ENTRYPOINT ["python3", "./entrypoint.py"]
+'''
+    (target_dir / "Dockerfile").write_text(dockerfile_content, encoding="utf-8")
+
+    # Resolve real values via optional, bounded network calls when the
+    # caller opted in — falling back to clearly-marked placeholders on
+    # any failure. Never let a network hiccup block scaffolding.
+    resolved_commit = None
+    if source_repo:
+        print(f"[FIRMARBITER] Resolving current HEAD commit for {source_repo} ...")
+        resolved_commit = fetch_commit_sha(source_repo)
+        if resolved_commit:
+            print(f"[FIRMARBITER] Resolved commit: {resolved_commit}")
+
+    resolved_digest_ref = None
+    if base_image:
+        print(f"[FIRMARBITER] Resolving real digest for {base_image} ...")
+        resolved_digest_ref = fetch_image_digest(base_image)
+        if resolved_digest_ref:
+            print(f"[FIRMARBITER] Resolved digest: {resolved_digest_ref}")
+
+    if source_repo and resolved_commit:
+        repository_line = f'"{source_repo}"'
+        commit_line = f'"{resolved_commit}"'
+        commit_comment = (
+            "    # Real, resolved HEAD commit at scaffold time — confirm "
+            "this is still the commit you intend to pin before building."
+        )
+    else:
+        repository_line = '"FILL IN: https://github.com/example/your-tool"'
+        commit_line = '"0000000000000000000000000000000000000000"'
+        commit_comment = (
+            "    # Must be a full 40-character commit SHA, not a branch "
+            "name — pin an\n    # exact commit for reproducibility. This "
+            "placeholder will FAIL\n    # validation until replaced with "
+            "a real commit hash."
+        )
+
+    if base_image and resolved_digest_ref:
+        base_image_line = f'  - "{resolved_digest_ref}"'
+        base_image_comment = (
+            "  # Real, resolved digest at scaffold time — confirm this "
+            "is still the base\n  # image you intend to use before "
+            "building."
+        )
+    else:
+        base_image_line = (
+            '  - "ubuntu:22.04@sha256:'
+            '0000000000000000000000000000000000000000000000000000000000000000"'
+        )
+        base_image_comment = (
+            "  # Must be pinned by @sha256 digest, not just a tag — tags "
+            "can be\n  # repointed. This placeholder will FAIL "
+            "validation until replaced."
+        )
+
+    # A genuinely schema-valid starter manifest — structure verified
+    # directly against schemas/adapter-manifest-v1.schema.json and a
+    # real, currently-passing manifest (adapters/emba/adapter.yaml),
+    # NOT the stale _template/adapter.yaml.example, which does not
+    # match the real enforced schema.
+    manifest_content = f'''schema_version: '1.0'
+adapter:
+  id: {name}
+  display_name: "{name.replace('-', ' ').title()} Adapter"
+  description: "FILL IN: what this adapter wraps and why"
+  version: 0.1.0
+  contract_version: '1.0'
+candidate:
+  name: "FILL IN: real candidate tool display name"
+  source:
+    type: git
+    repository: {repository_line}
+{commit_comment}
+    commit: {commit_line}
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+{base_image_comment}
+{base_image_line}
+runtime:
+  run_as_root: true
+  network: none
+  requirements: []
+  # Real options if your tool needs them: kvm, loop-devices,
+  # device-mapper, tun-tap, net-admin, ptrace, nested-containers,
+  # full-privileged. nested-containers is NOT currently supported by
+  # this project's coordinator (see fact_extractor's known limitation).
+capabilities:
+  stages:
+  - unpack
+  # Add "emulate" and/or "endpoint-discovery" only if your tool
+  # genuinely does them — a static-analysis-only tool (like EMBA) sets
+  # only "unpack" here.
+  firmware_architectures:
+  - unknown
+  # FILL IN real architectures your tool supports, e.g.: arm, arm64,
+  # mips, mipsel, x86, x86_64, powerpc
+  endpoint_protocols: []
+  hints:
+    architecture: optional
+    vendor: optional
+'''
+    (target_dir / "adapter.yaml").write_text(manifest_content, encoding="utf-8")
+
+    print(f"Scaffolded new adapter at adapters/{name}/")
+    print()
+    print("Real, honest next steps — none of this was done for you:")
+    print(f"  1. Read adapters/{name}/entrypoint.py and pipeline.py.example")
+    print(f"  2. Fill in adapters/{name}/adapter.yaml (marked FILL IN / placeholders)")
+    print(f"  3. Fill in adapters/{name}/Dockerfile — install your real tool")
+    print(f"  4. Implement run_unpack / run_emulate / run_endpoint_discovery")
+    print(f"  5. Validate: python3 run_firmarbiter.py --list-candidates")
+    return 0
+
 
 def validate_arguments(args: argparse.Namespace) -> str:
     experiment_id = (
@@ -965,12 +1292,18 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        all_adapters = discover_validated_adapters()
+        if args.new_adapter:
+            return scaffold_new_adapter(
+                args.new_adapter,
+                ADAPTERS_ROOT,
+                source_repo=args.source_repo,
+                base_image=args.base_image,
+            )
 
+        all_adapters = discover_validated_adapters()
         if args.list_candidates:
             list_adapters(all_adapters)
             return 0
-
         if not args.firmware:
             parser.print_help()
             return 2

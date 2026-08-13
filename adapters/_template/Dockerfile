@@ -1,26 +1,35 @@
 # adapters/_template/Dockerfile
 #
-# Reference Dockerfile pattern for a FIRMARBITER adapter. Copy this as a
-# starting point — the FROM line and any tool-installation steps are
-# entirely candidate-specific, but the final block (lifecycle/, entrypoint.py,
-# and the event schema) is REQUIRED boilerplate every adapter needs.
+# Starter Dockerfile for a new adapter. The lifecycle/, entrypoint.py,
+# and schemas/ COPY lines below are the same working pattern used by
+# every real adapter in this project — you should not need to change
+# them. What you DO need to add: installing your actual candidate tool
+# and its real dependencies.
 #
-# CRITICAL: the Adapter Contract's runtime paths (see request.json's
-# "paths" key, and firmarbiter_core/run_coordinator.py) never mount a
-# schema file into your container at runtime — confirmed by inspecting
-# the coordinator directly. If you hardcode a schema path expecting it
-# to be mounted, your adapter WILL crash with FileNotFoundError on its
-# first real run (this exact bug was found and fixed in the emba and
-# fact_extractor adapters). The schema must be baked into your image at
-# BUILD time instead, via the COPY step below.
+# Prefer scaffolding this automatically where possible:
+#   python3 run_firmarbiter.py --new-adapter <name>
+# which generates this same file for you.
 
-FROM your-base-image:tag
+FROM ubuntu:22.04
 
-# ... your tool-specific installation steps here ...
+# Avoids a real mirror clock-skew failure mode hit during this
+# project's own development (GPG signature date validation against a
+# snapshot mirror).
+RUN echo 'Acquire::Check-Date "false";' > /etc/apt/apt.conf.d/99no-check-date
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- FILL IN: install your actual candidate tool and its real
+# --- dependencies here. This is the genuinely tool-specific part no
+# --- template can do for you.
 
 WORKDIR /firmarbiter_adapter
 COPY lifecycle/ ./lifecycle/
 COPY entrypoint.py ./entrypoint.py
 COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
+RUN chmod +x ./entrypoint.py
 
-ENTRYPOINT ["python3", "/firmarbiter_adapter/entrypoint.py"]
+ENTRYPOINT ["python3", "./entrypoint.py"]

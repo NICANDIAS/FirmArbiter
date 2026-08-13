@@ -98,6 +98,12 @@ git checkout refactor/adapter-contract-v1
 
 ## 3. Understanding what you just cloned (a 60-second orientation)
 
+**Important: everything under `adapters/` is source code, not built
+images.** Cloning the repo does not give you working Docker images for any
+candidate — it gives you the Dockerfiles, Python entrypoints, and manifests
+needed to *build* them. No image exists until you either build one manually
+(§5) or run an experiment and let the coordinator build it automatically.
+
 ```
 firmarbiter/
 ├── run_firmarbiter.py          # the CLI you'll actually run
@@ -107,24 +113,31 @@ firmarbiter/
 │   └── probes/                 # the code that independently verifies
 │                                # unpack success, boot success, etc. —
 │                                # never trusts a candidate's self-report
-├── adapters/                   # one folder per candidate tool
+├── adapters/                   # SOURCE CODE for one candidate tool per
+│                                # folder — Dockerfile + entrypoint.py +
+│                                # adapter.yaml, not built images
 │   ├── firmae/
 │   ├── firmadyne/
 │   ├── emba/
 │   ├── fact_extractor/         # known-incomplete, see §6.4
-│   └── _template/               # copy this to build a new adapter
+│   └── _template/               # copy this to start building a NEW
+│                                # adapter for a tool that isn't here yet
+│                                # — see §12
 ├── schemas/                    # the real, enforced JSON schemas every
 │                                # adapter manifest and event must satisfy
 ├── score_aggregator.py         # turns raw results into a summary table
 ├── tools/
-│   └── assess_candidate.py     # pre-flight compatibility checker for a
-│                                # new candidate tool's Dockerfile/repo
+│   └── assess_candidate.py     # pre-flight compatibility checker — run
+│                                # this FIRST, before writing any new
+│                                # adapter code, see §12.1
 └── results/                    # every run's real output lands here,
                                   # nothing here until you run something
 ```
 
-You don't need to understand the internals to run an experiment — this
-orientation is here so the file paths referenced later make sense.
+You don't need to understand the internals to run an experiment against an
+existing candidate — this orientation is here so the file paths referenced
+later make sense. If you're planning to add a *new* candidate tool, read
+§12 as well before diving in.
 
 ---
 
@@ -514,3 +527,107 @@ a genuine multi-firmware evaluation. That's a bigger undertaking with its
 own real planning needs (storage policy for accumulating results, timeout
 tuning across many firmware images) — treat this document as your
 foundation for that, not the final word on it.
+
+---
+
+## 12. Adding a new candidate tool (one that isn't in `adapters/` yet)
+
+**Read this honestly, both the good and the limiting parts, before
+deciding how much time to budget.**
+
+### 12.1 The genuinely good news
+
+The `_template/` directory isn't a naive starting point — it already
+encodes every hard lifecycle-level lesson learned building the existing
+adapters (malformed events, missed heartbeats, ad-hoc shutdown handling —
+each one a real bug that cost real debugging time during this project's own
+development). `entrypoint.py`'s own comments state this directly: that
+boilerplate is "already correct and should not need changes." **You should
+not need to touch event emission, heartbeats, or shutdown handling at
+all** — that's real, meaningful risk-reduction already built in, not
+something you have to re-earn.
+
+### 12.2 The honest limitation
+
+What the template *cannot* remove is tool-specific integration work: your
+new candidate's own real extraction/boot/reporting logic, and getting that
+specific tool's own dependencies to build and run correctly inside Docker.
+Looking back at this project's own history, a large share of the real
+difficulty was here — a specific tool's specific build quirks, not
+anything about FirmArbiter's own contract. **Budget your time expecting
+this part to be genuinely proportional to how complex the target tool
+itself is to containerize, not to how "hard FirmArbiter is."**
+
+### 12.3 Start with the compatibility checker, before writing any code
+
+```bash
+python3 tools/assess_candidate.py <path-or-git-url-to-the-tool-you-want-to-add>
+```
+
+This inspects the target tool's own repository and reports back on real
+compatibility concerns — this project's own adapters were checked with this
+tool against the real upstream repositories first, and it caught real
+issues (an architecture-specific hardcoded dependency) automatically,
+before any adapter code existed.
+
+### 12.4 Copy the template and fill in exactly three functions
+
+```bash
+cp -r adapters/_template adapters/<your-new-candidate-name>
+```
+
+You only edit `run_unpack`, `run_emulate`, and `run_endpoint_discovery`
+inside your new `entrypoint.py` (or, more conveniently, write them in a
+separate `pipeline.py` following `pipeline.py.example`'s pattern and import
+them). The real, required contract for each:
+
+- **Return a `(stage_outcome, message)` tuple** — `stage_outcome` is one of
+  `"completed"`, `"failed"`, or `"not_applicable"` (use `"not_applicable"`
+  immediately if your tool doesn't do that stage at all — e.g. a
+  static-analysis-only tool has no real `emulate` or `endpoint-discovery`).
+- **Do not raise exceptions for a normal candidate failure** (e.g. your
+  tool's extraction command genuinely failing on this firmware) — return
+  `("failed", "...")` instead. Exceptions are reserved for real
+  adapter/contract-level bugs, which `entrypoint.py` already handles
+  correctly (it reports them, still performs a clean shutdown sequence,
+  then exits non-zero).
+- **`run_unpack` must leave the real, extracted filesystem at
+  `<artifacts_path>/unpack/rootfs/`** — not a copied archive.
+  FirmArbiter's independent verification inspects that exact path directly;
+  this specific mistake is called out in the template because it's a real
+  one that already cost real time during this project's own FIRMADYNE
+  onboarding.
+- **`run_endpoint_discovery` reports your tool's own *claims***, not a
+  verified result — FirmArbiter's separate neutral network probe does the
+  actual independent reachability check. These two are allowed to
+  legitimately disagree.
+
+### 12.5 Write the real Dockerfile for your tool
+
+Start from the template's `Dockerfile`, which already handles baking in
+the shared `lifecycle/` code and event schema correctly. The part you need
+to add is genuinely tool-specific: installing your candidate's own
+dependencies and making its actual binary/CLI available to your stage
+functions.
+
+### 12.6 Validate early and often
+
+Once you have a real `adapter.yaml` (renamed from the `.example`) and a
+buildable `Dockerfile`, confirm the coordinator actually recognizes it
+before investing further time in the pipeline logic:
+
+```bash
+python3 run_firmarbiter.py --list-candidates
+```
+
+This validates your manifest against the real, enforced schema
+(`schemas/`) and will tell you specifically what's wrong if it doesn't
+pass — fix these issues before writing more adapter logic, not after.
+
+### 12.7 A known, real gap worth knowing about before you start
+
+If your new candidate needs to launch its *own* nested containers (the way
+`fact_extractor` does, requiring a mounted Docker socket), be aware this
+project's current coordinator does not yet support that pattern (§6.4).
+Confirm your target tool doesn't need this before investing significant
+time in an adapter for it.
