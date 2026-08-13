@@ -300,7 +300,7 @@ def build_neutral_probe_image(
         self._neutral_probe_image = built
         return built
 
-    def inspect_image(
+def inspect_image(
         self,
         image_reference: str,
     ) -> dict[str, Any]:
