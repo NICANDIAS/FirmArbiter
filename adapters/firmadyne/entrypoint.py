@@ -400,9 +400,32 @@ def stage_unpack(
     try:
         with tarfile.open(str(rootfs_copy), "r:gz") as tf:
             tf.extractall(str(unpack_dir))
+        # Normalize permissions on the extracted tree so FIRMARBITER's
+        # independent (non-root) verification process can read every
+        # file and traverse every directory. The original tarball may
+        # faithfully preserve root-only permission bits (e.g. /root,
+        # /etc/shadow) from the source firmware; this step does not
+        # alter file contents or add/remove any files, it only ensures
+        # the export is independently inspectable. This mirrors the
+        # equivalent fix already applied to EMBA's exported artifacts.
+        import stat
+        for walk_root, dirs, files in os.walk(str(unpack_dir)):
+            for name in dirs:
+                p = os.path.join(walk_root, name)
+                try:
+                    st = os.stat(p)
+                    os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IXUSR)
+                except OSError as e:
+                    print(f"[FIRMARBITER][firmadyne] chmod failed on dir {p}: {e}", flush=True)
+            for name in files:
+                p = os.path.join(walk_root, name)
+                try:
+                    st = os.stat(p)
+                    os.chmod(p, st.st_mode | stat.S_IRUSR)
+                except OSError as e:
+                    print(f"[FIRMARBITER][firmadyne] chmod failed on file {p}: {e}", flush=True)
     except Exception as exc:
         print(f"[FIRMARBITER][firmadyne] WARNING: rootfs extraction for validation failed: {exc}", flush=True)
-
     event_writer.emit(
         "extraction_complete",
     )
