@@ -414,14 +414,19 @@ def stage_unpack(
                 p = os.path.join(walk_root, name)
                 try:
                     st = os.stat(p)
-                    os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IXUSR)
+                    os.chmod(
+                        p,
+                        st.st_mode
+                        | stat.S_IRUSR | stat.S_IXUSR
+                        | stat.S_IROTH | stat.S_IXOTH,
+                    )
                 except OSError as e:
                     print(f"[FIRMARBITER][firmadyne] chmod failed on dir {p}: {e}", flush=True)
             for name in files:
                 p = os.path.join(walk_root, name)
                 try:
                     st = os.stat(p)
-                    os.chmod(p, st.st_mode | stat.S_IRUSR)
+                    os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IROTH)
                 except OSError as e:
                     print(f"[FIRMARBITER][firmadyne] chmod failed on file {p}: {e}", flush=True)
     except Exception as exc:
