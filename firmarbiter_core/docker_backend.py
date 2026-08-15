@@ -495,27 +495,25 @@ class DockerBackend:
                 arguments.extend(
                     ["--device", loop_control]
                 )
-
-                loop_devices: list[Path] = []
-
-                for path in sorted(Path("/dev").glob("loop[0-9]*")):
-                    try:
-                        mode = path.stat().st_mode
-                    except FileNotFoundError:
-                        continue
-
-                    if stat.S_ISBLK(mode):
-                        loop_devices.append(path)
-
-                if not loop_devices:
-                    raise RuntimeRequirementError(
-                        "No host loop block devices are available"
-                    )
-
-                for path in loop_devices:
-                    arguments.extend(
-                        ["--device", str(path)]
-                    )
+                # Grant access to the entire loop device major
+                # number (7) via a device-cgroup rule, rather than
+                # attaching a fixed snapshot of /dev/loopN nodes
+                # that exist at container-creation time. A fixed
+                # snapshot fails whenever every existing loop
+                # device is already in use by the host (observed:
+                # snapd-heavy Ubuntu installs commonly occupy every
+                # /dev/loopN with mounted .snap files) or whenever
+                # a candidate allocates a new loop device via
+                # losetup after the container has already started,
+                # since a host-side node created after attachment
+                # is never visible inside the container under the
+                # fixed-list model.
+                arguments.extend(
+                    [
+                        "--device-cgroup-rule",
+                        "c 7:* rmw",
+                    ]
+                )
 
             elif requirement == "nested-containers":
                 raise RuntimeRequirementError(
