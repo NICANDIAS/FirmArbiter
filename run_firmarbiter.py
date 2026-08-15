@@ -1468,6 +1468,8 @@ def main() -> int:
     skipped = 0
     coordinator_errors = 0
     non_completed = 0
+    run_index = 0
+    run_durations: list[float] = []
 
     for case in cases:
         for adapter_id, adapter in selected_adapters.items():
@@ -1508,15 +1510,21 @@ def main() -> int:
                     break
                 continue
 
+            run_index += 1
             print("\n" + "=" * 72)
             print(
                 f"[FIRMARBITER] {adapter_id} <- {case['filename']}"
+            )
+            print(
+                f"[FIRMARBITER] Progress: {run_index}/{total_runs} "
+                f"runs ({100 * run_index / total_runs:.1f}%)"
             )
             print(
                 f"[FIRMARBITER] case_id={case['case_id']} "
                 f"attempt={args.attempt}"
             )
             print("=" * 72)
+            run_start_time = time.monotonic()
 
             try:
                 result = execute_with_live_progress(
@@ -1539,9 +1547,24 @@ def main() -> int:
                 if result.get("overall_status") != "completed":
                     non_completed += 1
 
+                run_durations.append(
+                    time.monotonic() - run_start_time
+                )
+                avg_duration = sum(run_durations) / len(
+                    run_durations
+                )
+                runs_remaining = total_runs - run_index
+
                 print(
                     "[FIRMARBITER] Result: "
                     + summarise_result(result)
+                )
+                print(
+                    "[FIRMARBITER] Avg/run so far: "
+                    f"{format_duration(avg_duration)} | "
+                    "Rough est. remaining: "
+                    f"{format_duration(avg_duration * runs_remaining)}"
+                    f" ({runs_remaining} runs left)"
                 )
                 print(
                     "[FIRMARBITER] Saved : "
