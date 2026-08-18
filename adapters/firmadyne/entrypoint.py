@@ -261,6 +261,43 @@ def pg_env(request: dict[str, Any]) -> dict[str, str]:
     return env
 
 
+def _wait_for_postgres_ready(
+    timeout_seconds: float = 30.0,
+) -> None:
+    """
+    Block until PostgreSQL is actually accepting connections.
+
+    `service postgresql start` returns success as soon as the
+    daemon process is forked, before it has finished initialising
+    and opening its listening socket. Under system load this race
+    can be lost intermittently, causing the extractor's
+    psycopg2.connect() call to fail with an uncaught
+    ConnectionRefusedError deep inside a subprocess whose output
+    is captured but never surfaced as a clear top-level error —
+    observed as a silent stage failure with no adapter-level
+    diagnostic. Polling pg_isready with a bounded timeout replaces
+    the implicit assumption of readiness with an explicit,
+    verified check.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    last_output = ""
+    while time.monotonic() < deadline:
+        check = subprocess.run(
+            ["pg_isready", "-h", "127.0.0.1"],
+            capture_output=True, text=True, check=False,
+        )
+        if check.returncode == 0:
+            return
+        last_output = check.stdout + check.stderr
+        time.sleep(0.5)
+    raise AdapterOperationalError(
+        "FIRMADYNE_POSTGRES_START_FAILED",
+        "infrastructure",
+        f"PostgreSQL did not become ready within "
+        f"{timeout_seconds}s: {last_output}",
+    )
+
+
 def start_postgres() -> None:
     result = subprocess.run(
         ["service", "postgresql", "start"],
@@ -272,6 +309,7 @@ def start_postgres() -> None:
             "infrastructure",
             f"PostgreSQL failed to start: {result.stderr}",
         )
+    _wait_for_postgres_ready()
     env = {
         "PGHOST": "127.0.0.1",
         "PGPORT": "5432",
