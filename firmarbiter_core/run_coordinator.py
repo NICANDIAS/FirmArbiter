@@ -1091,11 +1091,17 @@ class CandidateRunCoordinator:
                     supervisor.force_terminate()
                 except Exception:
                     pass
-
-                try:
-                    supervisor.remove()
-                except Exception:
-                    pass
+                # TEMPORARILY DISABLED FOR DEBUGGING (2026-08-18):
+                # keeping failed containers around to inspect
+                # docker logs / docker exec after a run finishes,
+                # instead of them being torn down immediately.
+                # RESTORE by uncommenting the block below, or by
+                # running: cp /tmp/run_coordinator.py.backup
+                # firmarbiter_core/run_coordinator.py
+                # try:
+                #     supervisor.remove()
+                # except Exception:
+                #     pass
 
         observed_events = (
             watchdog.observed_events
