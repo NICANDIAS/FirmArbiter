@@ -457,6 +457,7 @@ class DockerBackend:
         requirements: list[str],
     ) -> list[str]:
         arguments: list[str] = []
+        is_privileged = "full-privileged" in requirements
 
         for requirement in sorted(requirements):
             if requirement == "kvm":
@@ -495,25 +496,38 @@ class DockerBackend:
                 arguments.extend(
                     ["--device", loop_control]
                 )
-                # Grant access to the entire loop device major
-                # number (7) via a device-cgroup rule, rather than
-                # attaching a fixed snapshot of /dev/loopN nodes
-                # that exist at container-creation time. A fixed
-                # snapshot fails whenever every existing loop
-                # device is already in use by the host (observed:
-                # snapd-heavy Ubuntu installs commonly occupy every
-                # /dev/loopN with mounted .snap files) or whenever
-                # a candidate allocates a new loop device via
-                # losetup after the container has already started,
-                # since a host-side node created after attachment
-                # is never visible inside the container under the
-                # fixed-list model.
-                arguments.extend(
-                    [
-                        "--device-cgroup-rule",
-                        "c 7:* rmw",
-                    ]
-                )
+                if not is_privileged:
+                    # Grant access to the entire loop device major
+                    # number (7) via a device-cgroup rule, rather
+                    # than attaching a fixed snapshot of /dev/loopN
+                    # nodes that exist at container-creation time.
+                    # A fixed snapshot fails whenever every existing
+                    # loop device is already in use by the host
+                    # (observed: snapd-heavy Ubuntu installs
+                    # commonly occupy every /dev/loopN with mounted
+                    # .snap files) or whenever a candidate allocates
+                    # a new loop device via losetup after the
+                    # container has already started, since a
+                    # host-side node created after attachment is
+                    # never visible inside the container under the
+                    # fixed-list model.
+                    #
+                    # This rule is deliberately skipped when
+                    # full-privileged is also requested: a
+                    # privileged container already has unrestricted
+                    # device access, and adding an explicit
+                    # device-cgroup rule on top of --privileged was
+                    # observed to narrow rather than extend that
+                    # access on this host's Docker/cgroup version,
+                    # causing FIRMADYNE's own filesystem-extraction
+                    # stage to fail outright (exit 1, no stderr)
+                    # despite the container starting successfully.
+                    arguments.extend(
+                        [
+                            "--device-cgroup-rule",
+                            "c 7:* rmw",
+                        ]
+                    )
 
             elif requirement == "nested-containers":
                 raise RuntimeRequirementError(
