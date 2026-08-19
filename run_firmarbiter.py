@@ -704,7 +704,28 @@ def summarise_result(result: dict[str, Any]) -> str:
     ]
 
     if not reachability_statuses:
-        reachable = "not_attempted"
+        stage_results = result.get(
+            "candidate_stage_results", []
+        )
+        endpoint_discovery_attempted = any(
+            isinstance(entry, dict)
+            and entry.get("stage") == "endpoint-discovery"
+            for entry in stage_results
+        )
+        # An empty reachability_statuses list is ambiguous on its
+        # own: it covers both "endpoint-discovery never ran" and
+        # "endpoint-discovery ran, searched, and genuinely found
+        # nothing to claim" (e.g. FIRMADYNE's own probe timing out
+        # with zero claims after a real, executed search). Checking
+        # whether endpoint-discovery appears in
+        # candidate_stage_results at all — regardless of its own
+        # outcome — distinguishes a real negative from a true
+        # non-attempt, rather than collapsing both into the same
+        # "not_attempted" label.
+        if endpoint_discovery_attempted:
+            reachable = "false"
+        else:
+            reachable = "not_attempted"
     elif "true" in reachability_statuses:
         reachable = "true"
     elif "false" in reachability_statuses:
