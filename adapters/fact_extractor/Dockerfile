@@ -4,7 +4,7 @@ FROM python:3.11-slim
 # the mounted /var/run/docker.sock — this adapter orchestrates rather
 # than embeds its candidate tool.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends docker.io && \
+    apt-get install -y --no-install-recommends docker.io docker-cli && \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir jsonschema

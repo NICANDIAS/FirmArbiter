@@ -15,7 +15,7 @@ candidate:
 build:
   context: .
   dockerfile: Dockerfile
-  platform: linux/amd64
+  platform: linux/arm64
   base_images:
   - python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
   - fkiecad/fact_extractor@sha256:00ba73280f4744ba3ad3c1d7debd4476b80d95bd2df12c70afb73523385ca9ba
@@ -23,7 +23,7 @@ runtime:
   run_as_root: true
   network: none
   requirements:
-  - nested-containers
+  - docker-socket
   - full-privileged
 capabilities:
   stages:

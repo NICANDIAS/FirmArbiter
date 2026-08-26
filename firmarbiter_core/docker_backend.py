@@ -529,6 +529,27 @@ class DockerBackend:
                         ]
                     )
 
+            elif requirement == "docker-socket":
+                # Sibling-container pattern (DooD): mounts the HOST's
+                # real Docker socket into the candidate container.
+                # This grants the candidate root-equivalent control
+                # over the host's Docker daemon — a deliberate,
+                # documented isolation exception, scoped only to
+                # adapters that declare this requirement. See
+                # create_container() for the accompanying
+                # FIRMARBITER_HOST_ARTIFACTS_PATH env var, which any
+                # sibling container this adapter launches needs to
+                # resolve host-side bind-mount paths correctly.
+                socket_path = self._require_device(
+                    Path("/var/run/docker.sock")
+                )
+                arguments.extend(
+                    [
+                        "-v",
+                        f"{socket_path}:/var/run/docker.sock",
+                    ]
+                )
+
             elif requirement == "nested-containers":
                 raise RuntimeRequirementError(
                     "nested-containers is declared by the "
@@ -644,6 +665,17 @@ class DockerBackend:
                 "dst=/firmarbiter/control"
             ),
         ]
+
+        if "docker-socket" in runtime["requirements"]:
+            arguments.extend(
+                [
+                    "--env",
+                    (
+                        "FIRMARBITER_HOST_ARTIFACTS_PATH="
+                        f"{artifacts_directory}"
+                    ),
+                ]
+            )
 
         network_mode = runtime["network"]
 
