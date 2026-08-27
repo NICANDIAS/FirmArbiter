@@ -537,26 +537,21 @@ deciding how much time to budget.**
 
 ### 12.1 The genuinely good news
 
-The `_template/` directory isn't a naive starting point — it already
-encodes every hard lifecycle-level lesson learned building the existing
-adapters (malformed events, missed heartbeats, ad-hoc shutdown handling —
-each one a real bug that cost real debugging time during this project's own
-development). `entrypoint.py`'s own comments state this directly: that
-boilerplate is "already correct and should not need changes." **You should
-not need to touch event emission, heartbeats, or shutdown handling at
-all** — that's real, meaningful risk-reduction already built in, not
-something you have to re-earn.
+`--new-adapter` handles the mechanical setup for you — copying the real,
+already-correct shared plumbing (`lifecycle/`, `entrypoint.py`, event
+schema) and generating a manifest that's genuinely valid against the real
+schema from the start, not the project's own stale example file. You
+should not need to touch event emission, heartbeats, or shutdown handling
+at all — that's real, meaningful risk-reduction already built in.
 
 ### 12.2 The honest limitation
 
-What the template *cannot* remove is tool-specific integration work: your
-new candidate's own real extraction/boot/reporting logic, and getting that
-specific tool's own dependencies to build and run correctly inside Docker.
-Looking back at this project's own history, a large share of the real
-difficulty was here — a specific tool's specific build quirks, not
-anything about FirmArbiter's own contract. **Budget your time expecting
-this part to be genuinely proportional to how complex the target tool
-itself is to containerize, not to how "hard FirmArbiter is."**
+What no scaffolding tool can remove is tool-specific integration work:
+your new candidate's own real extraction/boot/reporting logic, and
+getting that specific tool's own dependencies to build and run correctly
+inside Docker. **Budget your time expecting this part to be genuinely
+proportional to how complex the target tool itself is to containerize,**
+not to how "hard FirmArbiter is."
 
 ### 12.3 Start with the compatibility checker, before writing any code
 
@@ -565,21 +560,52 @@ python3 tools/assess_candidate.py <path-or-git-url-to-the-tool-you-want-to-add>
 ```
 
 This inspects the target tool's own repository and reports back on real
-compatibility concerns — this project's own adapters were checked with this
-tool against the real upstream repositories first, and it caught real
-issues (an architecture-specific hardcoded dependency) automatically,
-before any adapter code existed.
+compatibility concerns *before* any adapter code exists.
 
-### 12.4 Copy the template and fill in exactly three functions
+### 12.4 Scaffold the adapter
+
+The simple form:
 
 ```bash
-cp -r adapters/_template adapters/<your-new-candidate-name>
+python3 run_firmarbiter.py --new-adapter <your-new-candidate-name>
 ```
 
+This creates `adapters/<name>/` with a complete, working skeleton —
+`entrypoint.py`, `lifecycle/`, `schemas/`, a starter `Dockerfile`, and an
+`adapter.yaml` that's already structurally valid, just with placeholder
+values you need to fill in.
+
+**The better form — let it fetch the real values for you:**
+
+```bash
+python3 run_firmarbiter.py --new-adapter <your-new-candidate-name> \
+  --source-repo https://github.com/example/your-tool.git \
+  --base-image ubuntu:22.04
+```
+
+This resolves the real, current commit SHA of your target repo and the
+real `@sha256` digest of your chosen base image automatically, and writes
+them directly into the manifest — removing two genuinely tedious manual
+lookups. **This is opt-in by design, not automatic**: you're still the one
+choosing the real source repo and base image; the tool just saves you
+looking up their exact pinned values by hand. If either fetch fails for
+any reason (no network, a blocked/restrictive network — this was
+personally hit and confirmed during this project's own testing on a
+university network that blocked Docker's DNS resolution outright, bad
+URL), you'll see a clear warning and the manifest falls back to the same
+clearly-marked placeholder it would have had anyway — nothing crashes,
+nothing silently breaks.
+
+**What still needs a real, human decision either way** — `candidate.name`
+(the tool's actual display name) is never auto-filled, since it isn't
+safely derivable from a repo URL or image tag.
+
+### 12.5 Fill in exactly three functions
+
 You only edit `run_unpack`, `run_emulate`, and `run_endpoint_discovery`
-inside your new `entrypoint.py` (or, more conveniently, write them in a
-separate `pipeline.py` following `pipeline.py.example`'s pattern and import
-them). The real, required contract for each:
+inside your new `entrypoint.py` (or write them in a separate
+`pipeline.py` following `pipeline.py.example`'s pattern and import them).
+The real, required contract for each:
 
 - **Return a `(stage_outcome, message)` tuple** — `stage_outcome` is one of
   `"completed"`, `"failed"`, or `"not_applicable"` (use `"not_applicable"`
@@ -593,38 +619,44 @@ them). The real, required contract for each:
   then exits non-zero).
 - **`run_unpack` must leave the real, extracted filesystem at
   `<artifacts_path>/unpack/rootfs/`** — not a copied archive.
-  FirmArbiter's independent verification inspects that exact path directly;
-  this specific mistake is called out in the template because it's a real
-  one that already cost real time during this project's own FIRMADYNE
-  onboarding.
+  FirmArbiter's independent verification inspects that exact path
+  directly; this specific mistake is called out in the template because
+  it's a real one that already cost real time during this project's own
+  FIRMADYNE onboarding.
 - **`run_endpoint_discovery` reports your tool's own *claims***, not a
   verified result — FirmArbiter's separate neutral network probe does the
   actual independent reachability check. These two are allowed to
   legitimately disagree.
 
-### 12.5 Write the real Dockerfile for your tool
+### 12.6 Write the real Dockerfile for your tool
 
-Start from the template's `Dockerfile`, which already handles baking in
-the shared `lifecycle/` code and event schema correctly. The part you need
-to add is genuinely tool-specific: installing your candidate's own
-dependencies and making its actual binary/CLI available to your stage
-functions.
+The generated `Dockerfile` already has the shared `lifecycle/` +
+`entrypoint.py` + event schema COPY lines correct — leave those alone.
+**The part you genuinely have to figure out yourself is tool-specific**;
+here's where to actually look, rather than guess:
 
-### 12.6 Validate early and often
+- **Your target tool's own README/install instructions** — the real,
+  authoritative source for what it needs to build and run.
+- **An existing adapter in this project as a real, working reference**
+  — `adapters/firmae/Dockerfile` or `adapters/firmadyne/Dockerfile` are
+  good starting patterns for a tool you `git clone` at a pinned commit
+  and build from source; both show the real, working shape (clone at the
+  pinned commit, install build dependencies, apply any needed patches).
+  `adapters/emba/Dockerfile` is a better reference if your tool instead
+  publishes its own official pre-built image you're extending rather than
+  building from source.
 
-Once you have a real `adapter.yaml` (renamed from the `.example`) and a
-buildable `Dockerfile`, confirm the coordinator actually recognizes it
-before investing further time in the pipeline logic:
+### 12.7 Validate early and often
 
 ```bash
 python3 run_firmarbiter.py --list-candidates
 ```
 
-This validates your manifest against the real, enforced schema
-(`schemas/`) and will tell you specifically what's wrong if it doesn't
-pass — fix these issues before writing more adapter logic, not after.
+Run this as soon as you have a filled-in `adapter.yaml`, before writing
+more adapter logic — it validates against the real, enforced schema and
+tells you specifically what's wrong if something doesn't pass.
 
-### 12.7 A known, real gap worth knowing about before you start
+### 12.8 A known, real gap worth knowing about before you start
 
 If your new candidate needs to launch its *own* nested containers (the way
 `fact_extractor` does, requiring a mounted Docker socket), be aware this

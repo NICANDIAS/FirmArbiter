@@ -435,6 +435,18 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
         peak_memory_mb = peak_memory_bytes / (1024 * 1024)
 
     reach_status = list_status(reachability)
+    if reach_status == "not_reported" and endpoint_stage:
+        # An empty reachability list is ambiguous on its own: it
+        # covers both "endpoint-discovery never ran" and
+        # "endpoint-discovery ran, searched, and genuinely found
+        # nothing to claim" (e.g. FIRMADYNE's own probe timing out
+        # with zero claims after a real, executed search).
+        # endpoint_stage is only non-empty when endpoint-discovery
+        # appears in candidate_stage_results at all, regardless of
+        # its own outcome — so its presence here distinguishes a
+        # real negative from a true non-attempt, rather than
+        # collapsing both into "not_reported".
+        reach_status = "false"
     stability_status = list_status(stability)
     authenticity_status = list_status(authenticity)
 

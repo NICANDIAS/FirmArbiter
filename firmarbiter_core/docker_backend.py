@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import fcntl
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -229,7 +230,6 @@ class DockerBackend:
     ) -> BuiltProbeImage:
         if self._neutral_probe_image is not None:
             return self._neutral_probe_image
-
         context_path = Path(__file__).resolve().parent
         dockerfile_path = (
             context_path
@@ -239,22 +239,26 @@ class DockerBackend:
         image_reference = (
             "firmarbiter-neutral-network-probe:1.0.0"
         )
-
-        self._run(
-            [
-                "build",
-                "--pull",
-                "--file",
-                str(dockerfile_path),
-                "--tag",
-                image_reference,
-                str(context_path),
-            ],
-            timeout=1200,
-        )
-
-        image_data = self.inspect_image(image_reference)
-        image_id = image_data.get("Id")
+        lock_path = context_path / ".probe-build.lock"
+        with open(lock_path, "w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                self._run(
+                    [
+                        "build",
+                        "--pull",
+                        "--file",
+                        str(dockerfile_path),
+                        "--tag",
+                        image_reference,
+                        str(context_path),
+                    ],
+                    timeout=1200,
+                )
+                image_data = self.inspect_image(image_reference)
+                image_id = image_data.get("Id")
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
         if not isinstance(image_id, str):
             raise DockerBackendError(
@@ -453,6 +457,7 @@ class DockerBackend:
         requirements: list[str],
     ) -> list[str]:
         arguments: list[str] = []
+        is_privileged = "full-privileged" in requirements
 
         for requirement in sorted(requirements):
             if requirement == "kvm":
@@ -491,27 +496,59 @@ class DockerBackend:
                 arguments.extend(
                     ["--device", loop_control]
                 )
-
-                loop_devices: list[Path] = []
-
-                for path in sorted(Path("/dev").glob("loop[0-9]*")):
-                    try:
-                        mode = path.stat().st_mode
-                    except FileNotFoundError:
-                        continue
-
-                    if stat.S_ISBLK(mode):
-                        loop_devices.append(path)
-
-                if not loop_devices:
-                    raise RuntimeRequirementError(
-                        "No host loop block devices are available"
-                    )
-
-                for path in loop_devices:
+                if not is_privileged:
+                    # Grant access to the entire loop device major
+                    # number (7) via a device-cgroup rule, rather
+                    # than attaching a fixed snapshot of /dev/loopN
+                    # nodes that exist at container-creation time.
+                    # A fixed snapshot fails whenever every existing
+                    # loop device is already in use by the host
+                    # (observed: snapd-heavy Ubuntu installs
+                    # commonly occupy every /dev/loopN with mounted
+                    # .snap files) or whenever a candidate allocates
+                    # a new loop device via losetup after the
+                    # container has already started, since a
+                    # host-side node created after attachment is
+                    # never visible inside the container under the
+                    # fixed-list model.
+                    #
+                    # This rule is deliberately skipped when
+                    # full-privileged is also requested: a
+                    # privileged container already has unrestricted
+                    # device access, and adding an explicit
+                    # device-cgroup rule on top of --privileged was
+                    # observed to narrow rather than extend that
+                    # access on this host's Docker/cgroup version,
+                    # causing FIRMADYNE's own filesystem-extraction
+                    # stage to fail outright (exit 1, no stderr)
+                    # despite the container starting successfully.
                     arguments.extend(
-                        ["--device", str(path)]
+                        [
+                            "--device-cgroup-rule",
+                            "c 7:* rmw",
+                        ]
                     )
+
+            elif requirement == "docker-socket":
+                # Sibling-container pattern (DooD): mounts the HOST's
+                # real Docker socket into the candidate container.
+                # This grants the candidate root-equivalent control
+                # over the host's Docker daemon — a deliberate,
+                # documented isolation exception, scoped only to
+                # adapters that declare this requirement. See
+                # create_container() for the accompanying
+                # FIRMARBITER_HOST_ARTIFACTS_PATH env var, which any
+                # sibling container this adapter launches needs to
+                # resolve host-side bind-mount paths correctly.
+                socket_path = self._require_device(
+                    Path("/var/run/docker.sock")
+                )
+                arguments.extend(
+                    [
+                        "-v",
+                        f"{socket_path}:/var/run/docker.sock",
+                    ]
+                )
 
             elif requirement == "nested-containers":
                 raise RuntimeRequirementError(
@@ -628,6 +665,17 @@ class DockerBackend:
                 "dst=/firmarbiter/control"
             ),
         ]
+
+        if "docker-socket" in runtime["requirements"]:
+            arguments.extend(
+                [
+                    "--env",
+                    (
+                        "FIRMARBITER_HOST_ARTIFACTS_PATH="
+                        f"{artifacts_directory}"
+                    ),
+                ]
+            )
 
         network_mode = runtime["network"]
 
@@ -930,9 +978,9 @@ class DockerBackend:
         )
         return completed.stdout, completed.stderr
 
-    def remove_container(self, container_id: str) -> None:
-        self._run(
-            ["container", "rm", "--force", container_id],
-            check=False,
-            timeout=30,
-        )
+def remove_container(self, container_id: str) -> None:
+    self._run(
+        ["container", "rm", "--force", container_id],
+        check=False,
+        timeout=30,
+    )

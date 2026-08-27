@@ -21,6 +21,7 @@ RUN apt-get update -qq && \
         python3-magic squashfs-tools bzip2 file fdisk \
         python3-six binwalk unzip p7zip-full \
         liblzma-dev liblzo2-dev zlib1g-dev \
+        sleuthkit \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create firmadyne system user required by makeImage.sh

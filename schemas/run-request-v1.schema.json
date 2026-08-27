@@ -205,6 +205,7 @@
               "tun-tap",
               "net-admin",
               "ptrace",
+              "docker-socket",
               "nested-containers",
               "full-privileged"
             ]

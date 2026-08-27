@@ -41,7 +41,7 @@ REQUEST_PATH = "/firmarbiter/input/request.json"
 # ---------------------------------------------------------------------
 # FILL IN: tool-specific pipeline stages.
 # Each must return a (stage_outcome, message) tuple.
-# stage_outcome should be one of: "completed", "failed", "not_applicable"
+# stage_outcome should be one of: "succeeded", "failed", "not_applicable"
 # (confirm exact allowed values against the schema before onboarding).
 # ---------------------------------------------------------------------
 
@@ -86,10 +86,27 @@ def run_unpack(request, event_writer):
     # fact_extractor grabs the first file in input/ — filename doesn't matter.
     shutil.copy(firmware_path, input_dir / firmware_path.name)
 
-    # NOTE: work_root must be a real host path (not a container-private
-    # path) for the sibling container's bind mount to resolve correctly,
-    # per the identical-path-mount requirement discovered onboarding EMBA.
+    # work_root above is a container-internal path
+    # (/firmarbiter/artifacts/...) and is NOT resolvable by the host's
+    # real dockerd, which this sibling-container launch talks to via the
+    # mounted socket. FIRMARBITER_HOST_ARTIFACTS_PATH is the real host
+    # path to the same directory, injected by docker_backend.py only
+    # when this adapter declares the docker-socket requirement — use it
+    # for the bind-mount source, and request.paths.artifacts (work_root)
+    # for everything else (this container's own file I/O).
     import os
+    host_artifacts_path = os.environ.get("FIRMARBITER_HOST_ARTIFACTS_PATH")
+    if not host_artifacts_path:
+        return "failed", (
+            "FIRMARBITER_HOST_ARTIFACTS_PATH is not set — this adapter "
+            "requires the docker-socket runtime requirement to be "
+            "granted, and cannot resolve a real host path for its "
+            "sibling container's bind mount without it."
+        )
+    host_work_root = (
+        Path(host_artifacts_path) / "unpack" / "_fact_extractor_run"
+    )
+
     current_uid = os.getuid()
     current_gid = os.getgid()
 
@@ -97,8 +114,10 @@ def run_unpack(request, event_writer):
         result = subprocess.run(
             [
                 "docker", "run", "--rm", "--privileged",
+                "--label", "firmarbiter.managed=true",
+                "--label", f"firmarbiter.run_id={request.run.run_id}",
                 "-v", "/dev:/dev",
-                "-v", f"{work_root}:/tmp/extractor",
+                "-v", f"{host_work_root}:/tmp/extractor",
                 "fkiecad/fact_extractor",
                 # fact_extractor runs as root inside its privileged container,
                 # leaving root-owned output on the host mount. Its own
@@ -147,7 +166,7 @@ def run_unpack(request, event_writer):
     if num_unpacked == 0:
         return "failed", "fact_extractor ran but extracted 0 files"
 
-    return "completed", (
+    return "succeeded", (
         f"fact_extractor carved {num_unpacked} chunk(s) from firmware "
         f"(NOTE: raw binary carving, not filesystem-aware unpacking — "
         f"see code comment for semantic distinction from FirmAE/FIRMADYNE)"

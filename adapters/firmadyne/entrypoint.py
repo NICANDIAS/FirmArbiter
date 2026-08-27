@@ -261,6 +261,43 @@ def pg_env(request: dict[str, Any]) -> dict[str, str]:
     return env
 
 
+def _wait_for_postgres_ready(
+    timeout_seconds: float = 30.0,
+) -> None:
+    """
+    Block until PostgreSQL is actually accepting connections.
+
+    `service postgresql start` returns success as soon as the
+    daemon process is forked, before it has finished initialising
+    and opening its listening socket. Under system load this race
+    can be lost intermittently, causing the extractor's
+    psycopg2.connect() call to fail with an uncaught
+    ConnectionRefusedError deep inside a subprocess whose output
+    is captured but never surfaced as a clear top-level error —
+    observed as a silent stage failure with no adapter-level
+    diagnostic. Polling pg_isready with a bounded timeout replaces
+    the implicit assumption of readiness with an explicit,
+    verified check.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    last_output = ""
+    while time.monotonic() < deadline:
+        check = subprocess.run(
+            ["pg_isready", "-h", "127.0.0.1"],
+            capture_output=True, text=True, check=False,
+        )
+        if check.returncode == 0:
+            return
+        last_output = check.stdout + check.stderr
+        time.sleep(0.5)
+    raise AdapterOperationalError(
+        "FIRMADYNE_POSTGRES_START_FAILED",
+        "infrastructure",
+        f"PostgreSQL did not become ready within "
+        f"{timeout_seconds}s: {last_output}",
+    )
+
+
 def start_postgres() -> None:
     result = subprocess.run(
         ["service", "postgresql", "start"],
@@ -272,6 +309,7 @@ def start_postgres() -> None:
             "infrastructure",
             f"PostgreSQL failed to start: {result.stderr}",
         )
+    _wait_for_postgres_ready()
     env = {
         "PGHOST": "127.0.0.1",
         "PGPORT": "5432",
@@ -400,9 +438,37 @@ def stage_unpack(
     try:
         with tarfile.open(str(rootfs_copy), "r:gz") as tf:
             tf.extractall(str(unpack_dir))
+        # Normalize permissions on the extracted tree so FIRMARBITER's
+        # independent (non-root) verification process can read every
+        # file and traverse every directory. The original tarball may
+        # faithfully preserve root-only permission bits (e.g. /root,
+        # /etc/shadow) from the source firmware; this step does not
+        # alter file contents or add/remove any files, it only ensures
+        # the export is independently inspectable. This mirrors the
+        # equivalent fix already applied to EMBA's exported artifacts.
+        import stat
+        for walk_root, dirs, files in os.walk(str(unpack_dir)):
+            for name in dirs:
+                p = os.path.join(walk_root, name)
+                try:
+                    st = os.stat(p)
+                    os.chmod(
+                        p,
+                        st.st_mode
+                        | stat.S_IRUSR | stat.S_IXUSR
+                        | stat.S_IROTH | stat.S_IXOTH,
+                    )
+                except OSError as e:
+                    print(f"[FIRMARBITER][firmadyne] chmod failed on dir {p}: {e}", flush=True)
+            for name in files:
+                p = os.path.join(walk_root, name)
+                try:
+                    st = os.stat(p)
+                    os.chmod(p, st.st_mode | stat.S_IRUSR | stat.S_IROTH)
+                except OSError as e:
+                    print(f"[FIRMARBITER][firmadyne] chmod failed on file {p}: {e}", flush=True)
     except Exception as exc:
         print(f"[FIRMARBITER][firmadyne] WARNING: rootfs extraction for validation failed: {exc}", flush=True)
-
     event_writer.emit(
         "extraction_complete",
     )

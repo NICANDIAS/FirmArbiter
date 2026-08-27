@@ -94,3 +94,4 @@ candidates/*/.local_path
 
 # Local machine-specific VERITAS config
 veritas.conf
+.probe-build.lock
