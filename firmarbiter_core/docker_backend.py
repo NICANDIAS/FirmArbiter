@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import time
 import fcntl
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,13 @@ class CreatedContainer:
     container_id: str
     container_name: str
     image_id: str
+    # Populated only when this container was created with the
+    # nested-containers requirement granted: the DinD sidecar backing it,
+    # and the private per-run network joining the two. None for every
+    # other container (candidates without the requirement, probe
+    # sidecars, the DinD sidecar itself).
+    sidecar_container_id: str | None = None
+    network_name: str | None = None
 
 
 def _sha256_file(path: Path) -> str:
@@ -551,11 +559,19 @@ class DockerBackend:
                 )
 
             elif requirement == "nested-containers":
-                raise RuntimeRequirementError(
-                    "nested-containers is declared by the "
-                    "contract but is not implemented by the "
-                    "v1 Docker backend"
-                )
+                # No low-level container-creation flag is added here,
+                # unlike every other branch in this function. Unlike
+                # docker-socket, nested-containers can't be expressed
+                # as a single --device/--cap-add/-v argument — it needs
+                # a second container (a DinD sidecar) created and made
+                # reachable before this candidate's own `docker
+                # container create` call, plus a `docker network
+                # connect` step after it. That orchestration lives in
+                # create_container() itself, which has access to
+                # self.backend methods this function doesn't. This
+                # branch exists only so the requirement isn't rejected
+                # as unsupported by the fallthrough `else` below.
+                pass
 
             else:
                 raise RuntimeRequirementError(
@@ -610,6 +626,90 @@ class DockerBackend:
 
         resources = request["resources"]
         runtime = request["runtime_grants"]
+
+        # nested-containers must be set up *before* this candidate's own
+        # `docker container create` call, since its DOCKER_HOST env var
+        # has to be baked into that call's arguments — unlike
+        # docker-socket (a bind mount) or every other requirement in
+        # _requirement_arguments(), this can't be expressed as a flag
+        # added to an already-decided argument list.
+        #
+        # The DinD network becomes the candidate's SOLE network when
+        # this requirement is granted, overriding whatever network_mode
+        # says (see the `if dind_network_name is not None` branch
+        # below, near where --network gets set) — not a second
+        # interface added after creation. An earlier version of this
+        # tried the two-networks approach (declared network_mode as
+        # primary, DinD network joined via a separate `docker network
+        # connect` after creation); Docker rejects that outright for
+        # "none" and "host" modes ("container cannot be connected to
+        # multiple networks with one of the networks in private (none)
+        # mode", confirmed live), and "isolated" isn't implemented yet
+        # — so there's currently no network_mode that could accept a
+        # second network anyway. A nested-containers candidate doesn't
+        # need independent host-level networking of its own regardless
+        # — everything it actually does over the network happens
+        # against the nested daemon it creates containers on, not this
+        # outer container's own network stack.
+        dind_network_name: str | None = None
+        dind_sidecar: CreatedContainer | None = None
+        docker_host_env: str | None = None
+
+        if "nested-containers" in runtime["requirements"]:
+            dind_network_name = self.create_run_network(
+                run_id
+            )
+            try:
+                dind_sidecar = self.create_dind_sidecar(
+                    network_name=dind_network_name,
+                    run_id=run_id,
+                )
+                self.start_container(
+                    dind_sidecar.container_id
+                )
+                if not self.container_running(
+                    dind_sidecar.container_id
+                ):
+                    raise DockerBackendError(
+                        "DinD sidecar exited during startup"
+                    )
+                self._wait_for_dind_ready(
+                    dind_sidecar,
+                    network_name=dind_network_name,
+                )
+            except Exception:
+                # If any setup step above fails, create_container()
+                # never returns a CreatedContainer — meaning the
+                # caller (DockerAdapterSupervisor, run_coordinator.py)
+                # never learns dind_network_name/dind_sidecar existed
+                # at all, and can't clean them up themselves. Without
+                # this block, a failed setup silently leaks the
+                # network and/or sidecar container on every failure,
+                # in production as well as in tests. Clean up whatever
+                # was actually created before re-raising, rather than
+                # letting the exception alone decide what gets left
+                # behind.
+                if dind_sidecar is not None:
+                    try:
+                        self.stop_container(
+                            dind_sidecar.container_id
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        self.remove_container(
+                            dind_sidecar.container_id
+                        )
+                    except Exception:
+                        pass
+                try:
+                    self.remove_network(dind_network_name)
+                except Exception:
+                    pass
+                raise
+            docker_host_env = (
+                f"tcp://{dind_sidecar.container_name}:2375"
+            )
 
         arguments = [
             "container",
@@ -679,7 +779,28 @@ class DockerBackend:
 
         network_mode = runtime["network"]
 
-        if network_mode == "none":
+        if dind_network_name is not None:
+            # nested-containers overrides network_mode's usual none/
+            # host/isolated choice entirely, rather than adding the
+            # DinD network as a second interface — Docker's "none" and
+            # "host" drivers both refuse any additional network being
+            # connected to a container using them (confirmed live:
+            # "container cannot be connected to multiple networks with
+            # one of the networks in private (none) mode"), and
+            # "isolated" isn't implemented yet. A candidate that needs
+            # nested-containers doesn't need independent host-level
+            # networking of its own anyway — everything Greenhouse's
+            # QemuRunner actually does over the network (bridges, IPs
+            # for discovered services) happens against the *nested*
+            # daemon it creates containers on, not this outer
+            # container's own network stack. So the DinD network
+            # becomes the sole network here, and the separate
+            # connect_network() step after creation is no longer
+            # needed at all.
+            arguments.extend(
+                ["--network", dind_network_name]
+            )
+        elif network_mode == "none":
             arguments.extend(["--network", "none"])
         elif network_mode == "host":
             arguments.extend(["--network", "host"])
@@ -707,6 +828,11 @@ class DockerBackend:
             )
         )
 
+        if docker_host_env is not None:
+            arguments.extend(
+                ["--env", f"DOCKER_HOST={docker_host_env}"]
+            )
+
         arguments.extend(
             [
                 image.reference,
@@ -727,6 +853,12 @@ class DockerBackend:
             container_id=container_id,
             container_name=container_name,
             image_id=image.image_id,
+            sidecar_container_id=(
+                dind_sidecar.container_id
+                if dind_sidecar is not None
+                else None
+            ),
+            network_name=dind_network_name,
         )
 
     def create_network_probe_sidecar(
@@ -795,6 +927,259 @@ class DockerBackend:
             container_id=container_id,
             container_name=container_name,
             image_id=image.image_id,
+        )
+
+    def create_run_network(self, run_id: str) -> str:
+        # A private, per-run bridge network — not a shared namespace and
+        # not a host port mapping. Scoped to exactly the one candidate
+        # and DinD sidecar that need to reach each other; nothing else
+        # on the host, and no other run's containers, can see this
+        # network. Docker's embedded per-network DNS lets the candidate
+        # reach the sidecar by container name, so no port bookkeeping
+        # or IP discovery is needed.
+        run_hash = hashlib.sha256(
+            run_id.encode("utf-8")
+        ).hexdigest()[:12]
+        network_name = f"firmarbiter-dind-net-{run_hash}"
+
+        self._run(
+            [
+                "network",
+                "create",
+                "--label",
+                "firmarbiter.managed=true",
+                "--label",
+                f"firmarbiter.run_id={run_id}",
+                network_name,
+            ]
+        )
+        return network_name
+
+    def disconnect_network(
+        self,
+        network_name: str,
+        container_id: str,
+    ) -> None:
+        # --force detaches even a still-running or already-removed
+        # container without erroring, and without requiring the
+        # container to be `docker rm`'d first. Used defensively during
+        # cleanup: remove_network() fails if anything is still attached,
+        # and cleanup must not assume some other step (e.g. the
+        # candidate's own removal) has already run — see the
+        # 2026-08-18 debug flag in run_coordinator.py that disables
+        # supervisor.remove() for failed-run inspection, which would
+        # otherwise leave this container attached indefinitely.
+        self._run(
+            [
+                "network",
+                "disconnect",
+                "--force",
+                network_name,
+                container_id,
+            ],
+            check=False,
+        )
+
+    def remove_network(self, network_name: str) -> None:
+        self._run(
+            ["network", "rm", network_name],
+            check=False,
+        )
+
+    def connect_network(
+        self,
+        network_name: str,
+        container_id: str,
+    ) -> None:
+        self._run(
+            [
+                "network",
+                "connect",
+                network_name,
+                container_id,
+            ]
+        )
+
+    def create_dind_sidecar(
+        self,
+        *,
+        network_name: str,
+        run_id: str,
+    ) -> CreatedContainer:
+        # NOTE (provenance): this references the public docker:dind tag
+        # directly rather than a pinned @sha256 digest, unlike every
+        # candidate base_image in the Adapter Contract's manifest schema
+        # (see adapter-manifest-v1.schema.json's base_images pattern,
+        # which requires a digest). That's a real gap against this
+        # project's own reproducibility standard (Section III.M) — pin
+        # this before treating nested-containers as fully verified, not
+        # just functionally working.
+        image_reference = "docker:dind"
+
+        run_hash = hashlib.sha256(
+            run_id.encode("utf-8")
+        ).hexdigest()[:12]
+        container_name = f"firmarbiter-dind-{run_hash}"
+
+        arguments = [
+            "container",
+            "create",
+            "--name",
+            container_name,
+            "--label",
+            "firmarbiter.managed=true",
+            "--label",
+            "firmarbiter.role=nested-containers-sidecar",
+            "--label",
+            f"firmarbiter.run_id={run_id}",
+            "--network",
+            network_name,
+            # DinD's own daemon genuinely needs --privileged (or an
+            # equivalent capability set) to manage its own nested
+            # containers, cgroups, and network namespaces. This is the
+            # same category of documented, scoped exception as
+            # docker-socket: granted only to the one purpose-built
+            # sidecar backing a candidate that declared
+            # nested-containers, not to candidates generally and not
+            # globally.
+            "--privileged",
+            # docker:dind has defaulted to TLS on port 2376 since
+            # Docker 19.03+; without this it will NOT be listening on
+            # the plaintext 2375 this code connects to. Disabling TLS
+            # here rather than setting up a cert volume is a
+            # deliberate, scoped choice: the isolation boundary for
+            # this connection is the private per-run network created
+            # above (unreachable from the host or other runs), not
+            # transport encryption — consistent with how docker-socket
+            # reasons about its own exception (grant exactly what's
+            # needed, scope it narrowly, don't add machinery the
+            # isolation model doesn't actually need).
+            "--env",
+            "DOCKER_TLS_CERTDIR=",
+            image_reference,
+        ]
+
+        completed = self._run(arguments)
+        container_id = completed.stdout.strip()
+
+        if not container_id:
+            raise DockerBackendError(
+                "Docker create returned no DinD-sidecar ID"
+            )
+
+        return CreatedContainer(
+            container_id=container_id,
+            container_name=container_name,
+            image_id=image_reference,
+        )
+
+    def get_container_network_ip(
+        self,
+        container_id: str,
+        network_name: str,
+    ) -> str:
+        # Only used for host-side readiness probing (see
+        # _wait_for_dind_ready) — the host process itself is never
+        # attached to the per-run network, so it has no access to
+        # Docker's embedded per-network DNS the way a container on
+        # that network does. Container-name-based addressing (used for
+        # the candidate's own DOCKER_HOST) only resolves from inside a
+        # container actually joined to the network; the host needs a
+        # real IP instead.
+        completed = self._run(
+            [
+                "inspect",
+                "--format",
+                (
+                    "{{json (index .NetworkSettings.Networks \""
+                    + network_name
+                    + "\")}}"
+                ),
+                container_id,
+            ]
+        )
+        network_info = json.loads(completed.stdout.strip())
+        ip_address = network_info.get("IPAddress", "")
+
+        if not ip_address:
+            raise DockerBackendError(
+                f"Container {container_id} has no IP address "
+                f"on network {network_name} yet"
+            )
+
+        return ip_address
+
+    def _wait_for_dind_ready(
+        self,
+        sidecar: CreatedContainer,
+        *,
+        network_name: str,
+        timeout_seconds: float = 60.0,
+        poll_interval_seconds: float = 1.0,
+    ) -> None:
+        # The sidecar container reporting "running" only means the
+        # dockerd *process* started, not that its daemon has finished
+        # initializing and is accepting API connections yet (observed:
+        # an inner `docker version` call against a freshly-started DinD
+        # sidecar can fail for a few seconds before the daemon is
+        # genuinely ready). Poll a real API call rather than trusting
+        # container state alone.
+        #
+        # This probe runs on the HOST (this is a subprocess call from
+        # DockerBackend itself, not from inside any container), so it
+        # must use the sidecar's real IP, not its container name —
+        # container-name resolution only works from inside a container
+        # attached to the same network, via Docker's embedded DNS,
+        # which the host has no access to. The candidate's own
+        # DOCKER_HOST (built elsewhere, using the container name) is
+        # correct and unaffected by this — it runs the resolution from
+        # inside a container that IS attached to the network.
+        deadline = time.monotonic() + timeout_seconds
+        last_error: str | None = None
+
+        while time.monotonic() < deadline:
+            if not self.container_running(
+                sidecar.container_id
+            ):
+                raise DockerBackendError(
+                    "DinD sidecar exited while waiting for "
+                    "its daemon to become ready"
+                )
+
+            try:
+                sidecar_ip = self.get_container_network_ip(
+                    sidecar.container_id, network_name
+                )
+            except DockerBackendError as exc:
+                last_error = str(exc)
+                time.sleep(poll_interval_seconds)
+                continue
+
+            docker_host = f"tcp://{sidecar_ip}:2375"
+
+            probe = subprocess.run(
+                [
+                    "docker", "-H", docker_host, "version",
+                    "--format", "{{.Server.Version}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if probe.returncode == 0:
+                return
+
+            last_error = probe.stderr.strip()
+            time.sleep(poll_interval_seconds)
+
+        raise DockerBackendError(
+            "DinD sidecar's inner daemon did not become "
+            f"ready within {timeout_seconds}s"
+            + (
+                f" (last error: {last_error})"
+                if last_error else ""
+            )
         )
 
     def exec_container_json(
@@ -978,9 +1363,9 @@ class DockerBackend:
         )
         return completed.stdout, completed.stderr
 
-def remove_container(self, container_id: str) -> None:
-    self._run(
-        ["container", "rm", "--force", container_id],
-        check=False,
-        timeout=30,
-    )
+    def remove_container(self, container_id: str) -> None:
+        self._run(
+            ["container", "rm", "--force", container_id],
+            check=False,
+            timeout=30,
+        )

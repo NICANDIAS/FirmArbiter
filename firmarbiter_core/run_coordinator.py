@@ -1086,6 +1086,27 @@ class CandidateRunCoordinator:
                 except Exception:
                     pass
 
+            if (
+                supervisor is not None
+                and supervisor.container is not None
+                and supervisor.container.sidecar_container_id
+                is not None
+            ):
+                try:
+                    self.backend.stop_container(
+                        supervisor.container
+                        .sidecar_container_id
+                    )
+                except Exception:
+                    pass
+                try:
+                    self.backend.remove_container(
+                        supervisor.container
+                        .sidecar_container_id
+                    )
+                except Exception:
+                    pass
+
             if supervisor is not None:
                 try:
                     supervisor.force_terminate()
@@ -1102,6 +1123,44 @@ class CandidateRunCoordinator:
                 #     supervisor.remove()
                 # except Exception:
                 #     pass
+
+            # This debug flag above means the candidate container is
+            # NOT necessarily removed by this point — only stopped, if
+            # even that succeeded. remove_network() fails if anything
+            # is still attached, so force-disconnect both containers
+            # explicitly rather than assuming supervisor.remove() ran.
+            if (
+                supervisor is not None
+                and supervisor.container is not None
+                and supervisor.container.network_name
+                is not None
+            ):
+                try:
+                    self.backend.disconnect_network(
+                        supervisor.container.network_name,
+                        supervisor.container.container_id,
+                    )
+                except Exception:
+                    pass
+                if (
+                    supervisor.container.sidecar_container_id
+                    is not None
+                ):
+                    try:
+                        self.backend.disconnect_network(
+                            supervisor.container
+                            .network_name,
+                            supervisor.container
+                            .sidecar_container_id,
+                        )
+                    except Exception:
+                        pass
+                try:
+                    self.backend.remove_network(
+                        supervisor.container.network_name
+                    )
+                except Exception:
+                    pass
 
         observed_events = (
             watchdog.observed_events

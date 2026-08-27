@@ -1,0 +1,59 @@
+# adapters/_template/adapter.yaml.example
+#
+# Copy this to adapters/<your_tool>/adapter.yaml and fill in every field
+# marked FILL IN. Structure verified directly against
+# schemas/adapter-manifest-v1.schema.json — this file previously did not
+# match the real schema and would have failed validation if followed
+# exactly as written; that gap is fixed here.
+#
+# Prefer this over manual copying where possible:
+#   python3 run_firmarbiter.py --new-adapter <name> \
+#     --source-repo <url> --base-image <image:tag>
+# which generates this same structure with real, resolved values
+# pre-filled instead of placeholders.
+schema_version: '1.0'
+adapter:
+  id: your-tool                      # short, filesystem-safe, matches directory name
+  display_name: "FILL IN: Your Tool Adapter"
+  description: "FILL IN: what this adapter wraps and why"
+  version: 0.1.0                     # your adapter's version, not the candidate tool's
+  contract_version: '1.0'            # Adapter Contract version this adapter implements
+candidate:
+  name: "FILL IN: real candidate tool display name"
+  source:
+    type: git
+    repository: "FILL IN: https://github.com/example/your-tool"
+    # Must be a full 40-character commit SHA, not a branch name — pin an
+    # exact commit for reproducibility. A moving branch reference has
+    # caused real breakage during this project's own development.
+    commit: "REPLACE_WITH_FULL_40_CHAR_COMMIT_SHA"
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+    # Must be pinned by @sha256 digest, not just a tag — tags can be
+    # repointed.
+    - "ubuntu:22.04@sha256:REPLACE_WITH_REAL_DIGEST"
+runtime:
+  run_as_root: true
+  network: none
+  requirements: []
+  # Real options if your tool needs them: kvm, loop-devices,
+  # device-mapper, tun-tap, net-admin, ptrace, nested-containers,
+  # full-privileged. nested-containers is NOT currently supported by
+  # this project's coordinator (see fact_extractor's known limitation).
+capabilities:
+  stages:
+    - unpack
+    # Add "emulate" and/or "endpoint-discovery" only if your tool
+    # genuinely does them — a static-analysis-only tool (like EMBA) sets
+    # only "unpack" here.
+  firmware_architectures:
+    - unknown
+    # FILL IN real architectures your tool supports, e.g.: arm, arm64,
+    # mips, mipsel, x86, x86_64, powerpc
+  endpoint_protocols: []
+  hints:
+    architecture: optional
+    vendor: optional

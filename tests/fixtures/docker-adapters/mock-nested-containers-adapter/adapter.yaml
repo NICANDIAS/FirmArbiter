@@ -1,0 +1,47 @@
+schema_version: "1.0"
+
+adapter:
+  id: mock-nested-containers-adapter
+  display_name: Mock Nested-Containers Contract Adapter
+  description: >-
+    Minimal fixture for live-verifying the nested-containers runtime
+    requirement (DinD sidecar) end to end, before it is ever pointed at a
+    real, complex candidate like Greenhouse. Does one real thing: runs
+    `docker version` against whatever DOCKER_HOST the backend injects, and
+    reports genuine success or failure — not just "the container started".
+  version: "0.1.0"
+  contract_version: "1.0"
+
+candidate:
+  name: Mock Nested-Containers Candidate
+  source:
+    type: git
+    repository: https://example.invalid/mock-nested-containers-candidate.git
+    commit: "0123456789abcdef0123456789abcdef01234567"
+  patches: []
+
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/arm64
+  base_images:
+    - python@sha256:6c4dd321d176d61ea848dc8c73a4f7dbae8f70e0ee48bb411ea2f045b599fa8e
+
+runtime:
+  run_as_root: false
+  network: none
+  requirements:
+    - nested-containers
+
+capabilities:
+  stages:
+    - unpack
+    - emulate
+    - endpoint-discovery
+  firmware_architectures:
+    - unknown
+  endpoint_protocols:
+    - http
+  hints:
+    architecture: optional
+    vendor: unsupported
