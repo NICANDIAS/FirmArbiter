@@ -216,8 +216,26 @@ def run_smoke_test(adapter_dir, timeout_seconds=120):
         print(f"Synthetic request written to {request_path}")
 
         # Build the adapter image (fast if already cached).
+        #
+        # Must pass --platform, matching the manifest's declared
+        # build.platform, the same way firmarbiter_core/docker_backend.py's
+        # real build_image() does. Without it, `docker build` defaults to
+        # the HOST's native platform. On an amd64 host that happens to
+        # silently match most adapters, so this went unnoticed — but on an
+        # arm64 host (e.g. this project's own dev VM) it breaks any
+        # adapter pinned to linux/amd64, such as EMBA's official image,
+        # with "no match for platform in manifest": Docker tries to pull
+        # an arm64 build of an image that's only published for amd64.
+        build_platform = (
+            (manifest.get("build") or {}).get("platform")
+        )
+        build_command = ["docker", "build"]
+        if build_platform:
+            build_command += ["--platform", build_platform]
+        build_command += ["-t", image_name, str(adapter_dir)]
+
         build_result = subprocess.run(
-            ["docker", "build", "-t", image_name, str(adapter_dir)],
+            build_command,
             capture_output=True, text=True,
         )
         if not check("Docker image builds", build_result.returncode == 0,
