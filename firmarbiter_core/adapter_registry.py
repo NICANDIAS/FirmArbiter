@@ -241,3 +241,69 @@ def discover_adapters(
         discovered[record.adapter_id] = record
 
     return discovered
+
+
+def discover_adapters_lenient(
+    adapters_root: Path,
+    schema_path: Path,
+) -> tuple[dict[str, AdapterRecord], dict[str, str]]:
+    """
+    Like discover_adapters(), but one broken/incomplete adapter directory
+    does not prevent the rest from being discovered.
+
+    discover_adapters() deliberately fails fast on the first problem it
+    finds -- correct for tests and for anything that wants "this whole
+    adapters/ tree is valid or it isn't". But it's also the ONLY
+    discovery path run_firmarbiter.py's CLI has, which means a single
+    incomplete adapter (a real, normal, in-progress state -- an
+    adapter.yaml written before its Dockerfile, say) currently blocks
+    --list-candidates AND every --run invocation for every OTHER
+    adapter too, not just the broken one. Confirmed live: an in-progress
+    adapters/greenhouse/ with adapter.yaml but no Dockerfile yet took
+    down `--list-candidates` entirely, hiding firmae/firmadyne/emba
+    /fact_extractor, which were all fine.
+
+    Returns (discovered, errors): discovered is exactly what
+    discover_adapters() would have returned had every directory been
+    valid; errors maps each broken directory's name to why it failed,
+    for anything that wants to explain rather than just silently drop
+    it (see list_adapters() and select_adapters() in run_firmarbiter.py).
+
+    A directory whose manifest declares an adapter_id already claimed by
+    an earlier, successfully-loaded directory is treated as an error for
+    the SECOND one, not a fatal duplicate-id abort -- consistent with
+    the rest of this function's "one bad directory never costs you the
+    others" contract. discover_adapters() still hard-fails on this (see
+    tests/test_adapter_registry.py); that's the deliberately different,
+    stricter contract for anything that wants it.
+    """
+    adapters_root = adapters_root.resolve()
+
+    if not adapters_root.is_dir():
+        raise AdapterRegistryError(
+            f"Adapter directory does not exist: {adapters_root}"
+        )
+
+    discovered: dict[str, AdapterRecord] = {}
+    errors: dict[str, str] = {}
+
+    for manifest_path in sorted(adapters_root.glob("*/adapter.yaml")):
+        directory_name = manifest_path.parent.name
+
+        try:
+            record = load_adapter(manifest_path, schema_path)
+        except AdapterRegistryError as exc:
+            errors[directory_name] = str(exc)
+            continue
+
+        if record.adapter_id in discovered:
+            first = discovered[record.adapter_id].manifest_path
+            errors[directory_name] = (
+                f"Duplicate adapter id '{record.adapter_id}': "
+                f"already claimed by {first}"
+            )
+            continue
+
+        discovered[record.adapter_id] = record
+
+    return discovered, errors
