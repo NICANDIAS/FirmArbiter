@@ -978,9 +978,9 @@ class DockerBackend:
         )
         return completed.stdout, completed.stderr
 
-def remove_container(self, container_id: str) -> None:
-    self._run(
-        ["container", "rm", "--force", container_id],
-        check=False,
-        timeout=30,
-    )
+    def remove_container(self, container_id: str) -> None:
+        self._run(
+            ["container", "rm", "--force", container_id],
+            check=False,
+            timeout=30,
+        )
