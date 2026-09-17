@@ -144,6 +144,8 @@
       "enum": [
         "unpack",
         "emulate",
+        "static-analysis",
+        "dynamic-analysis",
         "endpoint-discovery"
       ]
     },

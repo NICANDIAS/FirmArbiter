@@ -296,7 +296,7 @@ def run_unpack(request, event_writer, shutdown=None):
 
     file_count = sum(1 for _ in rootfs_dir.rglob("*") if _.is_file())
 
-    return "completed", (
+    return "succeeded", (
         f"EMBA full scan completed, extracted rootfs found at "
         f"{found_rootfs.relative_to(log_dir)} with {file_count} files "
         f"copied to unpack/rootfs/. Full analysis artifacts (SBOM, CVE "

@@ -41,8 +41,14 @@ REQUEST_PATH = "/firmarbiter/input/request.json"
 # ---------------------------------------------------------------------
 # FILL IN: tool-specific pipeline stages.
 # Each must return a (stage_outcome, message) tuple.
-# stage_outcome should be one of: "completed", "failed", "not_applicable"
-# (confirm exact allowed values against the schema before onboarding).
+# stage_outcome must be one of: "succeeded", "failed", "inconclusive",
+# "not_applicable" — these are the ONLY values schemas/adapter-event-v1
+# .schema.json accepts for a stage's outcome. Do NOT use "completed"
+# here: "completed" is a valid value only for the adapter's overall
+# outcome (see adapter_stopped(outcome=...) below), not for a single
+# stage. EMBA's entrypoint.py returned "completed" for a stage here and
+# it was schema-invalid — that's the bug this comment exists to prevent
+# a repeat of.
 # ---------------------------------------------------------------------
 
 def run_unpack(request, event_writer):
