@@ -66,6 +66,120 @@ def find_compose_files(repo_path):
     return found
 
 
+def find_vendored_roots(repo_path):
+    """
+    Finds subdirectories that look like an entire OTHER project vendored
+    into this repo, rather than the candidate's own code.
+
+    Why this matters: assessing Greenhouse for real surfaced this
+    directly. Most of that run's WARN evidence -- a Docker-socket
+    reference, a Python 3.6 classifier -- traced not to Greenhouse's own
+    code but to routersploit_gh/routersploit_ghpatched/, a complete
+    second tool (RouterSploit) bundled inside the repo. Evidence from
+    vendored code is real, but it's a different KIND of finding than
+    evidence from the candidate's own code -- it may never even run as
+    part of what your adapter invokes. Without distinguishing the two,
+    every check's evidence conflates "the candidate's own code has this
+    problem" with "some unrelated tool bundled three directories deep
+    has this problem", which is misleading in exactly the way that
+    happened here.
+
+    Three signals, in order of reliability:
+      1. .gitmodules at the repo root -- an explicit, structured
+         declaration. Most reliable by far.
+      2. A subdirectory containing its own .git (file or directory) --
+         the hallmark of a nested clone that was copied in whole,
+         history included.
+      3. A subdirectory (not the repo root itself) containing its own
+         setup.py or pyproject.toml -- a strong signal of "this is a
+         separate Python package", since a candidate's own code doesn't
+         typically define a second, independent package one level down
+         from its own.
+
+    This is a heuristic, not certainty -- a monorepo with genuinely
+    first-party sub-packages would also match signal 3. When in doubt
+    it labels rather than silently hides; see how evidence lines use
+    this in the checks below.
+    """
+    vendored = set()
+
+    gitmodules = repo_path / ".gitmodules"
+    if gitmodules.exists():
+        try:
+            text = gitmodules.read_text(errors="ignore")
+        except Exception:
+            text = ""
+        for match in re.finditer(r"path\s*=\s*(\S+)", text):
+            candidate_path = (repo_path / match.group(1)).resolve()
+            if candidate_path.is_dir():
+                vendored.add(candidate_path)
+
+    for git_marker in list(repo_path.rglob(".git")):
+        if git_marker.parent == repo_path:
+            continue  # the repo's own .git, not a vendored one
+        vendored.add(git_marker.parent)
+
+    for marker_name in ("setup.py", "pyproject.toml"):
+        for marker in repo_path.rglob(marker_name):
+            if marker.parent == repo_path:
+                continue  # the candidate's own top-level package, not vendored
+            # Only the OUTERMOST such directory counts as a vendored
+            # root -- routersploit_gh/routersploit_ghpatched/setup.py
+            # should mark routersploit_gh/, not add a second, redundant
+            # nested root underneath it.
+            already_covered = any(
+                marker.parent == v or v in marker.parent.parents
+                for v in vendored
+            )
+            if not already_covered:
+                vendored.add(marker.parent)
+
+    return vendored
+
+
+def label_evidence(path, repo_path, vendored_roots):
+    """
+    Prefixes an evidence line's path with [vendored: <root>] or
+    [own code] so a WARN/FAIL's evidence is honest about which kind of
+    code it's pointing at, rather than presenting a hit three directories
+    inside a bundled third-party tool exactly the same way as a hit in
+    the candidate's own top-level source.
+    """
+    resolved = path.resolve()
+    for root in vendored_roots:
+        if resolved == root or root in resolved.parents:
+            return f"[vendored: {root.relative_to(repo_path)}] {path.relative_to(repo_path)}"
+    return f"[own code] {path.relative_to(repo_path)}"
+
+
+def check_vendored_code(repo_path, vendored_roots):
+    if not vendored_roots:
+        return CheckResult(
+            "Vendored / third-party code", "INFO",
+            "No vendored third-party projects detected (no .gitmodules, "
+            "no nested .git, no nested setup.py/pyproject.toml one or "
+            "more directories in). Other checks' evidence below can be "
+            "read as the candidate's own code without qualification.",
+        )
+    repo_relative = sorted(
+        str(root.relative_to(repo_path)) for root in vendored_roots
+    )
+    return CheckResult(
+        "Vendored / third-party code", "INFO",
+        f"{len(vendored_roots)} vendored third-party director"
+        f"{'y' if len(vendored_roots) == 1 else 'ies'} detected. Other "
+        f"checks below label their evidence '[own code]' or "
+        f"'[vendored: ...]' accordingly -- a finding inside vendored "
+        f"code is real, but it's evidence about a bundled dependency, "
+        f"not necessarily about what the candidate's own code does or "
+        f"what your adapter will actually invoke. Worth confirming "
+        f"whether your adapter's pipeline even touches these paths "
+        f"before treating a vendored-code WARN as equally urgent to an "
+        f"own-code one.",
+        evidence=repo_relative,
+    )
+
+
 def check_single_container_buildability(repo_path):
     dockerfiles = find_dockerfiles(repo_path)
     if len(dockerfiles) == 0:
@@ -122,7 +236,7 @@ def check_multiservice_architecture(repo_path):
     )
 
 
-def check_bare_host_dind_assumptions(repo_path):
+def check_bare_host_dind_assumptions(repo_path, vendored_roots):
     patterns = [
         r"/var/run/docker\.sock",
         r"\bdocker\s+(run|images|ps|create)\b",
@@ -138,7 +252,7 @@ def check_bare_host_dind_assumptions(repo_path):
             continue
         for pattern in patterns:
             if re.search(pattern, text):
-                hits.append(f"{f.relative_to(repo_path)}: matches /{pattern}/")
+                hits.append(f"{label_evidence(f, repo_path, vendored_roots)}: matches /{pattern}/")
                 break
     if not hits:
         return CheckResult(
@@ -155,7 +269,7 @@ def check_bare_host_dind_assumptions(repo_path):
     )
 
 
-def check_architecture_hardcoding(repo_path):
+def check_architecture_hardcoding(repo_path, vendored_roots):
     pattern = re.compile(r"[_\-](amd64|x86_64)[_.]")
     arch_var_pattern = re.compile(r"dpkg --print-architecture|\$\{?ARCH\}?|uname -m")
     hits = []
@@ -167,7 +281,7 @@ def check_architecture_hardcoding(repo_path):
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if pattern.search(line) and not arch_var_pattern.search(line):
-                hits.append(f"{f.relative_to(repo_path)}:{line_no}: {line.strip()[:100]}")
+                hits.append(f"{label_evidence(f, repo_path, vendored_roots)}:{line_no}: {line.strip()[:100]}")
     if not hits:
         return CheckResult(
             "Architecture-hardcoding", "PASS",
@@ -183,17 +297,17 @@ def check_architecture_hardcoding(repo_path):
     )
 
 
-def check_privileged_or_device_requirements(repo_path):
+def check_privileged_or_device_requirements(repo_path, vendored_roots):
     hits = []
     compose_files = find_compose_files(repo_path)
     for cf in compose_files:
         text = cf.read_text(errors="ignore")
         if "privileged" in text or "/dev" in text or "devices:" in text:
-            hits.append(f"{cf.relative_to(repo_path)}: references privileged/device access")
+            hits.append(f"{label_evidence(cf, repo_path, vendored_roots)}: references privileged/device access")
     for f in find_dockerfiles(repo_path):
         text = f.read_text(errors="ignore")
         if "--privileged" in text:
-            hits.append(f"{f.relative_to(repo_path)}: references --privileged")
+            hits.append(f"{label_evidence(f, repo_path, vendored_roots)}: references --privileged")
     # Also check documentation — many tools (e.g. fact_extractor) only
     # document --privileged/-v /dev:/dev in README usage examples, not in
     # any Dockerfile or compose file. Missing this produced a false
@@ -205,7 +319,7 @@ def check_privileged_or_device_requirements(repo_path):
         except Exception:
             continue
         if "--privileged" in text or re.search(r"-v\s+/dev:/dev", text):
-            hits.append(f"{f.relative_to(repo_path)}: documents --privileged / /dev mount in usage instructions")
+            hits.append(f"{label_evidence(f, repo_path, vendored_roots)}: documents --privileged / /dev mount in usage instructions")
     if not hits:
         return CheckResult(
             "Privileged / device requirements", "INFO",
@@ -221,7 +335,7 @@ def check_privileged_or_device_requirements(repo_path):
     )
 
 
-def check_python_version_compatibility(repo_path):
+def check_python_version_compatibility(repo_path, vendored_roots):
     """
     Looks for the candidate's OWN declared Python version requirements and
     flags a likely mismatch against what a fresh adapter's base image
@@ -267,14 +381,14 @@ def check_python_version_compatibility(repo_path):
             match = pattern.search(text)
             if match:
                 findings.append(
-                    f"{f.relative_to(repo_path)}: requires-python "
-                    f"'{match.group(1).strip()}'"
+                    f"{label_evidence(f, repo_path, vendored_roots)}: "
+                    f"requires-python '{match.group(1).strip()}'"
                 )
             classifiers = classifier_pattern.findall(text)
             if classifiers:
                 findings.append(
-                    f"{f.relative_to(repo_path)}: classifiers list "
-                    f"Python {', '.join(sorted(set(classifiers)))}"
+                    f"{label_evidence(f, repo_path, vendored_roots)}: "
+                    f"classifiers list Python {', '.join(sorted(set(classifiers)))}"
                 )
 
     for f in repo_path.rglob(".python-version"):
@@ -283,7 +397,7 @@ def check_python_version_compatibility(repo_path):
         except Exception:
             continue
         if version:
-            findings.append(f"{f.relative_to(repo_path)}: pins {version}")
+            findings.append(f"{label_evidence(f, repo_path, vendored_roots)}: pins {version}")
 
     if not findings:
         return CheckResult(
@@ -304,12 +418,15 @@ def check_python_version_compatibility(repo_path):
         f"bound (e.g. '<3.10' or a classifier list that stops at 3.8) is "
         f"a strong signal you'll hit the exact class of dependency "
         f"breakage that made onboarding Greenhouse take as long as it "
-        f"did.",
+        f"did. Check each finding's [own code] / [vendored: ...] label "
+        f"below first, though -- a constraint declared only inside "
+        f"vendored code says nothing about the candidate's own "
+        f"compatibility.",
         evidence=findings,
     )
 
 
-def check_dependency_file_conflicts(repo_path):
+def check_dependency_file_conflicts(repo_path, vendored_roots):
     """
     Finds every requirements*.txt-shaped file in the repo and flags:
       (a) more than one existing at all (which one is authoritative?),
@@ -321,6 +438,17 @@ def check_dependency_file_conflicts(repo_path):
     What it catches is the specific, real pattern that cost real time
     during onboarding: two requirements files quietly disagreeing with
     each other, discovered only after a confusing pip install failure.
+
+    Distinguishes an OWN-vs-VENDORED conflict (the candidate's own
+    requirements.txt disagreeing with a bundled third-party tool's) from
+    a conflict entirely within vendored code. The first is exactly the
+    real pattern found assessing Greenhouse (its own requirements.txt
+    wanted requests==2.24.0; a bundled RouterSploit copy wanted
+    2.21.0) -- genuinely actionable, since pip installing both means one
+    silently wins depending on order, and it affects a package the
+    candidate's own code presumably imports. A conflict entirely inside
+    vendored code is lower-stakes: both files may not even get installed
+    as part of what your adapter actually runs.
     """
     pin_pattern = re.compile(
         r"^\s*([A-Za-z0-9_.\-]+)\s*==\s*([A-Za-z0-9_.\-]+)"
@@ -339,8 +467,15 @@ def check_dependency_file_conflicts(repo_path):
             "by this check), or via a non-pip package manager.",
         )
 
+    def is_own_code(f):
+        resolved = f.resolve()
+        return not any(
+            resolved == root or root in resolved.parents
+            for root in vendored_roots
+        )
+
     # package_name -> {version -> [files that pin it there]}
-    pins: dict[str, dict[str, list[str]]] = {}
+    pins: dict[str, dict[str, list[Path]]] = {}
     for f in req_files:
         try:
             text = f.read_text(errors="ignore")
@@ -351,9 +486,7 @@ def check_dependency_file_conflicts(repo_path):
             if not match:
                 continue
             name, version = match.group(1).lower(), match.group(2)
-            pins.setdefault(name, {}).setdefault(version, []).append(
-                str(f.relative_to(repo_path))
-            )
+            pins.setdefault(name, {}).setdefault(version, []).append(f)
 
     conflicts = {
         name: versions
@@ -361,32 +494,55 @@ def check_dependency_file_conflicts(repo_path):
         if len(versions) > 1
     }
 
+    labeled_files = [
+        label_evidence(f, repo_path, vendored_roots) for f in req_files
+    ]
+
     if len(req_files) == 1 and not conflicts:
         return CheckResult(
             "Dependency file conflicts", "PASS",
             f"Exactly one requirements file found "
-            f"({req_files[0].relative_to(repo_path)}), no internal "
-            f"conflicts to check across files.",
+            f"({labeled_files[0]}), no internal conflicts to check "
+            f"across files.",
         )
-
-    evidence = [
-        f"{name}: " + "; ".join(
-            f"{version} in {', '.join(files)}"
-            for version, files in versions.items()
-        )
-        for name, versions in conflicts.items()
-    ]
 
     if conflicts:
-        return CheckResult(
-            "Dependency file conflicts", "FAIL",
+        evidence = list(labeled_files)
+        mixed_conflict = False
+        for name, versions in conflicts.items():
+            files_by_version = "; ".join(
+                f"{version} in "
+                + ", ".join(label_evidence(f, repo_path, vendored_roots) for f in files)
+                for version, files in versions.items()
+            )
+            spans_own_and_vendored = (
+                any(is_own_code(f) for files in versions.values() for f in files)
+                and any(not is_own_code(f) for files in versions.values() for f in files)
+            )
+            if spans_own_and_vendored:
+                mixed_conflict = True
+                evidence.append(f"{name} [OWN CODE vs VENDORED]: {files_by_version}")
+            else:
+                evidence.append(f"{name}: {files_by_version}")
+
+        detail = (
             f"{len(req_files)} requirements file(s) found, and "
             f"{len(conflicts)} package(s) are pinned to genuinely "
             f"different exact versions across them. pip will pick one "
             f"file's version depending on install order -- decide which "
             f"file is authoritative before building, not after a "
-            f"confusing version-mismatch failure.",
-            evidence=[str(f.relative_to(repo_path)) for f in req_files] + evidence,
+            f"confusing version-mismatch failure."
+        )
+        if mixed_conflict:
+            detail += (
+                " At least one conflict spans the candidate's OWN "
+                "requirements file and a vendored one -- that's the "
+                "higher-stakes case: it can affect a package your "
+                "adapter's own code presumably imports, not just an "
+                "unrelated bundled tool."
+            )
+        return CheckResult(
+            "Dependency file conflicts", "FAIL", detail, evidence=evidence,
         )
 
     return CheckResult(
@@ -396,7 +552,7 @@ def check_dependency_file_conflicts(repo_path):
         f"adapter's Dockerfile should actually install from -- multiple "
         f"files existing at all is often a sign of a dev/prod split or "
         f"partially-abandoned dependency management.",
-        evidence=[str(f.relative_to(repo_path)) for f in req_files],
+        evidence=labeled_files,
     )
 
 
@@ -459,14 +615,16 @@ def check_maintenance_signal(git_url):
 
 
 def run_all_checks(repo_path, git_url):
+    vendored_roots = find_vendored_roots(repo_path)
     return [
+        check_vendored_code(repo_path, vendored_roots),
         check_single_container_buildability(repo_path),
         check_multiservice_architecture(repo_path),
-        check_bare_host_dind_assumptions(repo_path),
-        check_architecture_hardcoding(repo_path),
-        check_privileged_or_device_requirements(repo_path),
-        check_python_version_compatibility(repo_path),
-        check_dependency_file_conflicts(repo_path),
+        check_bare_host_dind_assumptions(repo_path, vendored_roots),
+        check_architecture_hardcoding(repo_path, vendored_roots),
+        check_privileged_or_device_requirements(repo_path, vendored_roots),
+        check_python_version_compatibility(repo_path, vendored_roots),
+        check_dependency_file_conflicts(repo_path, vendored_roots),
         check_install_time_reboot(repo_path),
         check_maintenance_signal(git_url),
     ]
