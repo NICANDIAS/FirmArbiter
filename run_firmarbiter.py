@@ -37,6 +37,10 @@ from firmarbiter_core.adapter_registry import (
     discover_adapters,
 )
 from firmarbiter_core.docker_backend import DockerBackend, DockerBackendError
+from firmarbiter_core.runtime_requirements import (
+    experimental_requirements,
+    unsupported_requirements,
+)
 from firmarbiter_core.run_coordinator import (
     CandidateRunCoordinator,
     RunCoordinatorError,
@@ -976,6 +980,7 @@ def list_adapters(adapters: dict[str, AdapterRecord]) -> None:
         candidate = manifest["candidate"]
         build = manifest["build"]
         capabilities = manifest["capabilities"]
+        requirements = manifest["runtime"]["requirements"]
 
         print(f"  {adapter_id}")
         print(f"    Display name: {adapter['display_name']}")
@@ -986,6 +991,33 @@ def list_adapters(adapters: dict[str, AdapterRecord]) -> None:
             "    Stages:       "
             + ", ".join(capabilities["stages"])
         )
+
+        # Surface backend capability status BEFORE anyone tries a real
+        # run, not after a build succeeds and container-creation fails.
+        # This is the exact gap that let nested-containers be a legal,
+        # schema-valid manifest declaration with zero backend support and
+        # no way to find that out except by trying.
+        unsupported = unsupported_requirements(requirements)
+        experimental = experimental_requirements(requirements)
+        if requirements:
+            print("    Requirements: " + ", ".join(requirements))
+        if unsupported:
+            print(
+                "    ⚠ BLOCKED:    "
+                + ", ".join(unsupported)
+                + " -- declared here, but not implemented by the "
+                  "current Docker backend. A real run WILL fail at "
+                  "container-creation time."
+            )
+        if experimental:
+            print(
+                "    ⚠ EXPERIMENTAL: "
+                + ", ".join(experimental)
+                + " -- runs, but not yet proven reliable end-to-end. "
+                  "See firmarbiter_core/runtime_requirements.py for "
+                  "specifics."
+            )
+
         print(f"    Manifest:     {record.manifest_path}")
         print()
 
