@@ -37,5 +37,6 @@ COPY entrypoint.py ./entrypoint.py
 # never even reach disk), so the schema must be baked into the image
 # at build time instead, same as lifecycle/ and entrypoint.py above.
 COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
+COPY schemas/run-request-v1.schema.json ./schemas/run-request-v1.schema.json
 
 ENTRYPOINT ["python3", "/firmarbiter_adapter/entrypoint.py"]

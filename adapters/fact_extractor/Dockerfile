@@ -16,5 +16,6 @@ COPY entrypoint.py ./entrypoint.py
 # confirmed by inspecting firmarbiter_core/run_coordinator.py directly.
 # Schema must be baked into the image at build time instead.
 COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
+COPY schemas/run-request-v1.schema.json ./schemas/run-request-v1.schema.json
 
 ENTRYPOINT ["python3", "/firmarbiter_adapter/entrypoint.py"]

@@ -22,6 +22,15 @@ RUN apt-get update -qq && \
         python3 python3-pip ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+# lifecycle/events.py and lifecycle/request.py both validate against the
+# real contract schemas at runtime and need jsonschema to do it. This was
+# previously missing from this Dockerfile — a brand-new adapter scaffolded
+# from this template would build cleanly and then crash on the first
+# `import jsonschema` the moment it actually ran. fact_extractor's and
+# EMBA's own Dockerfiles already had to add this independently; it
+# belongs here instead so every new adapter gets it for free.
+RUN pip install --no-cache-dir jsonschema
+
 # --- FILL IN: install your actual candidate tool and its real
 # --- dependencies here. This is the genuinely tool-specific part no
 # --- template can do for you.
@@ -30,6 +39,7 @@ WORKDIR /firmarbiter_adapter
 COPY lifecycle/ ./lifecycle/
 COPY entrypoint.py ./entrypoint.py
 COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
+COPY schemas/run-request-v1.schema.json ./schemas/run-request-v1.schema.json
 RUN chmod +x ./entrypoint.py
 
 ENTRYPOINT ["python3", "./entrypoint.py"]
