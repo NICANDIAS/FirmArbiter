@@ -1154,6 +1154,10 @@ RUN apt-get update -qq && \\
         python3 python3-pip ca-certificates && \\
     rm -rf /var/lib/apt/lists/*
 
+# lifecycle/events.py and lifecycle/request.py validate against the real
+# contract schemas at runtime and need jsonschema to do it.
+RUN pip install --no-cache-dir jsonschema
+
 # --- FILL IN: install your actual candidate tool and its real
 # --- dependencies here. This is the genuinely tool-specific part no
 # --- template can do for you.
@@ -1162,6 +1166,7 @@ WORKDIR /firmarbiter_adapter
 COPY lifecycle/ ./lifecycle/
 COPY entrypoint.py ./entrypoint.py
 COPY schemas/adapter-event-v1.schema.json ./schemas/adapter-event-v1.schema.json
+COPY schemas/run-request-v1.schema.json ./schemas/run-request-v1.schema.json
 RUN chmod +x ./entrypoint.py
 
 ENTRYPOINT ["python3", "./entrypoint.py"]
