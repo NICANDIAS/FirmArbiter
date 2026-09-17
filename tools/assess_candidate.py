@@ -556,6 +556,127 @@ def check_dependency_file_conflicts(repo_path, vendored_roots):
     )
 
 
+def check_wildcard_import_risk(repo_path, vendored_roots):
+    """
+    Flags `from X import *` in the candidate's own Python source.
+
+    Not a theoretical risk -- this is the exact, confirmed root cause of
+    real hours-long debugging during Greenhouse onboarding.
+    QemuRunner.py's `from . import *` silently pulled in every sibling
+    module in backend/, including Binary.py (which drags in angr) and
+    FirmAEwrapper.py (which drags in pwntools -> an incompatible
+    pyelftools version) -- neither of which QemuRunner's own logic
+    (the only thing run_unpack/run_emulate actually needed) used at
+    all. The eventual fix was a one-line sed removing that single
+    import line, which also let two large, unrelated dependency chains
+    be dropped from the Dockerfile entirely.
+
+    A wildcard import doesn't guarantee this problem, but it's cheap to
+    grep for and expensive to discover by hand mid-build -- worth
+    knowing about before writing a single line of adapter code, not
+    after a confusing stack trace three modules deep in a library the
+    adapter never needed.
+    """
+    pattern = re.compile(r"^\s*from\s+[\w.]*\s+import\s+\*\s*$")
+    hits = []
+    for f in repo_path.rglob("*.py"):
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if pattern.match(line):
+                hits.append(
+                    f"{label_evidence(f, repo_path, vendored_roots)}:"
+                    f"{line_no}: {line.strip()}"
+                )
+    if not hits:
+        return CheckResult(
+            "Wildcard import risk", "PASS",
+            "No 'from X import *' found in the candidate's Python source.",
+        )
+    return CheckResult(
+        "Wildcard import risk", "WARN",
+        f"Found {len(hits)} wildcard import(s). This is exactly the "
+        f"pattern that caused real, hours-long dependency-chain "
+        f"breakage onboarding Greenhouse (a wildcard import in "
+        f"QemuRunner.py silently pulled in angr and pwntools, neither "
+        f"actually needed by the code path being adapted). Before "
+        f"installing everything this module's package imports "
+        f"transitively, check whether the specific function(s) your "
+        f"adapter calls actually need all of it -- if not, the fix is "
+        f"often a one-line patch removing the wildcard import, the "
+        f"same convention already used in adapters/firmadyne's and "
+        f"adapters/firmae's committed patches.",
+        evidence=hits[:15],
+    )
+
+
+def check_bootstrap_scripts(repo_path, vendored_roots):
+    """
+    Inventories scripts that likely run during installation/setup and
+    flags a few cheap, high-signal patterns inside them: sudo usage,
+    external downloads, and nested git clones. Doesn't (can't, statically)
+    tell you what files/state such a script actually creates -- that
+    needs a real, sandboxed dry-run, which is future work, not this
+    check. What this gives you is the list of scripts worth reading
+    BEFORE assuming `pip install -r requirements.txt` is the whole
+    installation story -- real candidates in this project (Greenhouse's
+    own install.sh/download.sh, FirmAE's install.sh) all needed
+    meaningfully more than that.
+    """
+    script_names = {
+        "install.sh", "setup.sh", "bootstrap.sh", "init.sh",
+        "configure", "download.sh",
+    }
+    scripts = [
+        f for f in repo_path.rglob("*")
+        if f.is_file() and f.name in script_names
+    ]
+
+    if not scripts:
+        return CheckResult(
+            "Bootstrap / install scripts", "INFO",
+            "No install.sh/setup.sh/bootstrap.sh/configure/download.sh "
+            "found. Candidate likely installs via requirements.txt/"
+            "setup.py alone -- or its bootstrap step lives somewhere "
+            "this scan doesn't look for (a Makefile target, inline "
+            "Dockerfile RUN commands, etc.); worth a manual check "
+            "either way.",
+        )
+
+    evidence = []
+    for f in sorted(scripts):
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        signals = []
+        if re.search(r"\bsudo\b", text):
+            signals.append("uses sudo")
+        download_count = len(re.findall(r"\b(wget|curl)\s", text))
+        if download_count:
+            signals.append(f"{download_count} external download(s)")
+        clone_count = len(re.findall(r"\bgit\s+clone\b", text))
+        if clone_count:
+            signals.append(f"{clone_count} nested git clone(s)")
+        signal_text = ", ".join(signals) if signals else "no notable patterns"
+        evidence.append(
+            f"{label_evidence(f, repo_path, vendored_roots)}: {signal_text}"
+        )
+
+    return CheckResult(
+        "Bootstrap / install scripts", "INFO",
+        f"{len(scripts)} bootstrap/install script(s) found. Read these "
+        f"before assuming a plain pip/apt install covers everything -- "
+        f"external downloads and nested clones are exactly the kind of "
+        f"step an adapter's Dockerfile has to reproduce explicitly, and "
+        f"they're easy to miss if you only look at the dependency "
+        f"files.",
+        evidence=evidence,
+    )
+
+
 def check_install_time_reboot(repo_path):
     hits = []
     doc_files = list(repo_path.rglob("*.md")) + list(repo_path.rglob("INSTALL*"))
@@ -625,6 +746,8 @@ def run_all_checks(repo_path, git_url):
         check_privileged_or_device_requirements(repo_path, vendored_roots),
         check_python_version_compatibility(repo_path, vendored_roots),
         check_dependency_file_conflicts(repo_path, vendored_roots),
+        check_wildcard_import_risk(repo_path, vendored_roots),
+        check_bootstrap_scripts(repo_path, vendored_roots),
         check_install_time_reboot(repo_path),
         check_maintenance_signal(git_url),
     ]
