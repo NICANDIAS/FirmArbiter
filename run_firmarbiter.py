@@ -1328,10 +1328,14 @@ runtime:
   run_as_root: true
   network: none
   requirements: []
-  # Real options if your tool needs them: kvm, loop-devices,
-  # device-mapper, tun-tap, net-admin, ptrace, nested-containers,
-  # full-privileged. nested-containers is NOT currently supported by
-  # this project's coordinator (see fact_extractor's known limitation).
+  # See firmarbiter_core/runtime_requirements.py for the full,
+  # current list of requirement names and which are actually supported
+  # by the Docker backend today (that file is the single source of
+  # truth -- this comment used to hand-list them and had drifted twice:
+  # it omitted docker-socket, which IS supported, and wrongly
+  # attributed nested-containers' limitation to "fact_extractor's known
+  # limitation" -- fact_extractor uses docker-socket, not
+  # nested-containers, and the two have nothing to do with each other).
 capabilities:
   stages:
   - unpack
