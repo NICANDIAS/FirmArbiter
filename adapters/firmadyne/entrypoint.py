@@ -2,7 +2,8 @@
 """FIRMADYNE adapter entrypoint v0.1.0.
 
 Implements Adapter Contract v1.0 for FIRMADYNE.
-Pipeline mirrors candidates/firmadyne/run_adapter.sh.
+Pipeline mirrors legacy/candidates/firmadyne/run_adapter.sh (historical
+reference only -- see legacy/README.md).
 Structure mirrors adapters/firmae/entrypoint.py.
 """
 from __future__ import annotations

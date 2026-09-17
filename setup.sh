@@ -137,8 +137,9 @@ echo "[ 6/6 ] Running self-check..."
 
 "$VENV_PYTHON" firmarbiter_selfcheck.py
 
-# Make adapter scripts executable and create output dirs
-find candidates/ -name "run_adapter.sh" -exec chmod +x {} \; 2>/dev/null || true
+# Make legacy adapter scripts executable, if the legacy/ tree is present
+# (chmod on a dead, historical code path -- see legacy/README.md).
+find legacy/candidates/ -name "run_adapter.sh" -exec chmod +x {} \; 2>/dev/null || true
 mkdir -p results/runs results/logs results/unpack_cache reports
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -149,12 +150,12 @@ echo ""
 echo "  All commands below use ./python which points at the venv."
 echo "  You do not need to activate the venv manually."
 echo ""
-echo "  Register your tools:"
-echo "    python run_firmarbiter.py --register-tool ~/Desktop/FirmAE"
-echo "    python run_firmarbiter.py --register-tool ~/firmadyne"
-echo "    python run_firmarbiter.py --register-tool ~/emba"
+echo "  Add a new candidate adapter:"
+echo "    python run_firmarbiter.py --new-adapter <name>"
+echo "    (see adapters/_template/, and adapters/fact_extractor/ or"
+echo "     adapters/emba/ as worked examples)"
 echo ""
-echo "  Confirm registration:"
+echo "  See the currently discovered, schema-valid adapters:"
 echo "    python run_firmarbiter.py --list-candidates"
 echo ""
 echo "  Test the service probe:"
