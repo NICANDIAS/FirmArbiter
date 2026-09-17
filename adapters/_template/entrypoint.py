@@ -15,7 +15,12 @@ HOW TO USE THIS TEMPLATE:
   This is deliberate: every bug that cost hours on FirmAE/FIRMADYNE
   (malformed events, missed heartbeats, ad-hoc SIGTERM handling) lived
   in exactly this boilerplate, so it now lives in lifecycle/ instead,
-  tested once, and reused by every adapter.
+  tested once, and reused by every adapter BUILT FROM THIS TEMPLATE.
+  ("every adapter" used to be stated unconditionally here -- it wasn't
+  true: FirmAE and FIRMADYNE predate this template and are entirely
+  self-contained. See fact_extractor/ and emba/ for real adapters that
+  do use this shared code, if you want a worked example instead of a
+  blank template.)
 
   If your tool doesn't do a given stage (e.g. a static-analysis tool
   like EMBA has no 'emulate' or 'endpoint-discovery' stage), just

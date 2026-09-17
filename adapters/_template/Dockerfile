@@ -2,9 +2,11 @@
 #
 # Starter Dockerfile for a new adapter. The lifecycle/, entrypoint.py,
 # and schemas/ COPY lines below are the same working pattern used by
-# every real adapter in this project — you should not need to change
-# them. What you DO need to add: installing your actual candidate tool
-# and its real dependencies.
+# fact_extractor/ and emba/ (the adapters actually built from this
+# template) — you should not need to change them. FirmAE and FIRMADYNE
+# predate this template and don't follow this pattern; see
+# legacy/README.md. What you DO need to add: installing your actual
+# candidate tool and its real dependencies.
 #
 # Prefer scaffolding this automatically where possible:
 #   python3 run_firmarbiter.py --new-adapter <name>

@@ -5,6 +5,12 @@ Implements Adapter Contract v1.0 for FIRMADYNE.
 Pipeline mirrors legacy/candidates/firmadyne/run_adapter.sh (historical
 reference only -- see legacy/README.md).
 Structure mirrors adapters/firmae/entrypoint.py.
+
+NOTE FOR NEW ADAPTER AUTHORS: like adapters/firmae/, this predates the
+shared adapters/_template/lifecycle/ code and is self-contained rather
+than using it. Don't copy this file's structure for a new adapter --
+start at adapters/_template/, and see adapters/fact_extractor/ or
+adapters/emba/ for worked examples that use the shared lifecycle/ code.
 """
 from __future__ import annotations
 

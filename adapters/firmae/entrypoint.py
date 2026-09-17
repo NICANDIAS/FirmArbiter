@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+# NOTE FOR NEW ADAPTER AUTHORS: this is a working, validated adapter,
+# but it predates FirmArbiter's shared adapters/_template/lifecycle/
+# code and is entirely self-contained (its own EventWriter, heartbeat,
+# shutdown handling, etc.) instead of using it. Don't copy this file's
+# structure as the starting point for a new adapter -- it will lead you
+# to re-implement plumbing the template already provides and already
+# fixed real bugs in. Start at adapters/_template/ instead, and look at
+# adapters/fact_extractor/ or adapters/emba/ for worked examples that
+# actually use the shared lifecycle/ code. See legacy/README.md for why
+# this one doesn't.
 
 from __future__ import annotations
 
