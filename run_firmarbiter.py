@@ -35,6 +35,7 @@ from firmarbiter_core.adapter_registry import (
     AdapterRecord,
     AdapterRegistryError,
     discover_adapters,
+    discover_adapters_lenient,
 )
 from firmarbiter_core.docker_backend import DockerBackend, DockerBackendError
 from firmarbiter_core.runtime_requirements import (
@@ -205,19 +206,26 @@ def scan_firmware(path_value: str) -> list[dict[str, Any]]:
     return cases
 
 
-def discover_validated_adapters() -> dict[str, AdapterRecord]:
+def discover_validated_adapters() -> tuple[dict[str, AdapterRecord], dict[str, str]]:
+    """Returns (discovered, errors). One broken adapter directory
+    (adapter.yaml present but e.g. no Dockerfile yet -- a normal
+    in-progress state) no longer prevents discovering the rest; see
+    discover_adapters_lenient()'s docstring for why this matters."""
     try:
-        return discover_adapters(
+        return discover_adapters_lenient(
             ADAPTERS_ROOT,
             MANIFEST_SCHEMA,
         )
     except AdapterRegistryError as exc:
+        # Only raised for adapters_root itself being missing entirely --
+        # everything else is now per-directory and returned as `errors`.
         raise CliError(str(exc)) from exc
 
 
 def select_adapters(
     all_adapters: dict[str, AdapterRecord],
     selection: str,
+    discovery_errors: dict[str, str] | None = None,
 ) -> dict[str, AdapterRecord]:
     if selection.strip().lower() == "all":
         return dict(all_adapters)
@@ -235,11 +243,27 @@ def select_adapters(
     ]
 
     if missing:
+        discovery_errors = discovery_errors or {}
+        detail_lines = []
+        for adapter_id in missing:
+            # discovery_errors is keyed by DIRECTORY name, which is
+            # usually but not always the same as the adapter's declared
+            # id -- an adapter.yaml that fails to parse at all never
+            # gets far enough to report its own id, so the directory
+            # name is what's available. Match on that.
+            if adapter_id in discovery_errors:
+                detail_lines.append(
+                    f"  - {adapter_id}: {discovery_errors[adapter_id]}"
+                )
+        detail = (
+            "\n" + "\n".join(detail_lines) if detail_lines else ""
+        )
         raise CliError(
             "Unknown candidate adapter(s): "
             + ", ".join(missing)
             + ". Available: "
             + ", ".join(sorted(all_adapters))
+            + detail
         )
 
     return {
@@ -967,12 +991,18 @@ Examples:
     return parser
 
 
-def list_adapters(adapters: dict[str, AdapterRecord]) -> None:
-    if not adapters:
+def list_adapters(
+    adapters: dict[str, AdapterRecord],
+    errors: dict[str, str] | None = None,
+) -> None:
+    errors = errors or {}
+
+    if not adapters and not errors:
         print("No validated adapters were discovered under adapters/.")
         return
 
-    print(f"Discovered {len(adapters)} validated adapter(s):\n")
+    if adapters:
+        print(f"Discovered {len(adapters)} validated adapter(s):\n")
 
     for adapter_id, record in sorted(adapters.items()):
         manifest = record.manifest
@@ -1020,6 +1050,17 @@ def list_adapters(adapters: dict[str, AdapterRecord]) -> None:
 
         print(f"    Manifest:     {record.manifest_path}")
         print()
+
+    if errors:
+        print(
+            f"Skipped {len(errors)} adapter directory(ies) that failed "
+            f"to load (this does not affect the adapters listed above):\n"
+        )
+        for directory_name, message in sorted(errors.items()):
+            print(f"  {directory_name}")
+            print(f"    {message}")
+            print()
+
 
 def fetch_commit_sha(repo_url: str, *, timeout: int = 15) -> str | None:
     """
@@ -1358,9 +1399,9 @@ def main() -> int:
                 base_image=args.base_image,
             )
 
-        all_adapters = discover_validated_adapters()
+        all_adapters, discovery_errors = discover_validated_adapters()
         if args.list_candidates:
-            list_adapters(all_adapters)
+            list_adapters(all_adapters, discovery_errors)
             return 0
         if not args.firmware:
             parser.print_help()
@@ -1370,6 +1411,7 @@ def main() -> int:
         selected_adapters = select_adapters(
             all_adapters,
             args.candidates,
+            discovery_errors,
         )
         cases = scan_firmware(args.firmware)
         results_root = Path(args.results_root).expanduser().resolve()
