@@ -221,6 +221,185 @@ def check_privileged_or_device_requirements(repo_path):
     )
 
 
+def check_python_version_compatibility(repo_path):
+    """
+    Looks for the candidate's OWN declared Python version requirements and
+    flags a likely mismatch against what a fresh adapter's base image
+    actually provides by default.
+
+    This is exactly the category of problem that caused the real,
+    hours-long debugging session onboarding Greenhouse: old pinned
+    dependencies breaking under a newer Python's restructured exception
+    internals (lxml, urllib3, six all hit this). A mismatch caught here,
+    before any Docker build, is minutes of reading instead of hours of
+    reproducing a stack trace to figure out it was the Python version all
+    along.
+
+    Heuristic text scan of the common places a Python version constraint
+    gets declared -- not a resolver, and not proof either way. It tells
+    you where to look, not that the candidate will definitely work or
+    fail. Doctor diagnoses; it doesn't decide for you.
+    """
+    # adapters/_template/Dockerfile pins FROM ubuntu:22.04 and installs
+    # python3 via plain `apt-get install python3` with no version pin --
+    # Ubuntu 22.04 (Jammy)'s python3 package is 3.10.x. If your adapter's
+    # own Dockerfile changes this (a different base image, a PPA, a
+    # source build), this comparison no longer applies -- it's checking
+    # the TEMPLATE default, not your adapter's actual choice.
+    template_python = "3.10 (Ubuntu 22.04 jammy's default python3 package)"
+
+    sources = {
+        "setup.py": re.compile(r"python_requires\s*=\s*['\"]([^'\"]+)['\"]"),
+        "setup.cfg": re.compile(r"python_requires\s*=\s*([^\n]+)"),
+        "pyproject.toml": re.compile(r"requires-python\s*=\s*['\"]([^'\"]+)['\"]"),
+    }
+    classifier_pattern = re.compile(
+        r"Programming Language :: Python :: (\d+\.\d+)"
+    )
+
+    findings = []
+    for filename, pattern in sources.items():
+        for f in repo_path.rglob(filename):
+            try:
+                text = f.read_text(errors="ignore")
+            except Exception:
+                continue
+            match = pattern.search(text)
+            if match:
+                findings.append(
+                    f"{f.relative_to(repo_path)}: requires-python "
+                    f"'{match.group(1).strip()}'"
+                )
+            classifiers = classifier_pattern.findall(text)
+            if classifiers:
+                findings.append(
+                    f"{f.relative_to(repo_path)}: classifiers list "
+                    f"Python {', '.join(sorted(set(classifiers)))}"
+                )
+
+    for f in repo_path.rglob(".python-version"):
+        try:
+            version = f.read_text(errors="ignore").strip()
+        except Exception:
+            continue
+        if version:
+            findings.append(f"{f.relative_to(repo_path)}: pins {version}")
+
+    if not findings:
+        return CheckResult(
+            "Python version compatibility", "INFO",
+            "No explicit Python version constraint found (setup.py/"
+            "setup.cfg/pyproject.toml python_requires or classifiers, "
+            ".python-version). Either the candidate doesn't pin one, or "
+            "it's declared somewhere this scan doesn't look. Worth a "
+            "manual check before assuming compatibility.",
+        )
+
+    return CheckResult(
+        "Python version compatibility", "WARN",
+        f"Candidate declares Python version constraints. A fresh adapter "
+        f"gets Python {template_python} unless your Dockerfile changes "
+        f"that. Compare the declared constraint(s) below against that "
+        f"before assuming pip install will just work -- an old upper "
+        f"bound (e.g. '<3.10' or a classifier list that stops at 3.8) is "
+        f"a strong signal you'll hit the exact class of dependency "
+        f"breakage that made onboarding Greenhouse take as long as it "
+        f"did.",
+        evidence=findings,
+    )
+
+
+def check_dependency_file_conflicts(repo_path):
+    """
+    Finds every requirements*.txt-shaped file in the repo and flags:
+      (a) more than one existing at all (which one is authoritative?),
+      (b) the same package pinned to CONFLICTING versions across files.
+
+    This is a simple exact-pin comparison (==X vs ==Y for the same
+    package name), not a real dependency resolver -- it will miss
+    resolvable range conflicts and can't tell you which pin is "right".
+    What it catches is the specific, real pattern that cost real time
+    during onboarding: two requirements files quietly disagreeing with
+    each other, discovered only after a confusing pip install failure.
+    """
+    pin_pattern = re.compile(
+        r"^\s*([A-Za-z0-9_.\-]+)\s*==\s*([A-Za-z0-9_.\-]+)"
+    )
+
+    req_files = sorted(
+        set(repo_path.rglob("*requirements*.txt"))
+        - set(repo_path.rglob("*/node_modules/*"))
+    )
+
+    if not req_files:
+        return CheckResult(
+            "Dependency file conflicts", "INFO",
+            "No *requirements*.txt files found. Candidate may declare "
+            "dependencies only in setup.py/pyproject.toml (not scanned "
+            "by this check), or via a non-pip package manager.",
+        )
+
+    # package_name -> {version -> [files that pin it there]}
+    pins: dict[str, dict[str, list[str]]] = {}
+    for f in req_files:
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        for line in text.splitlines():
+            match = pin_pattern.match(line)
+            if not match:
+                continue
+            name, version = match.group(1).lower(), match.group(2)
+            pins.setdefault(name, {}).setdefault(version, []).append(
+                str(f.relative_to(repo_path))
+            )
+
+    conflicts = {
+        name: versions
+        for name, versions in pins.items()
+        if len(versions) > 1
+    }
+
+    if len(req_files) == 1 and not conflicts:
+        return CheckResult(
+            "Dependency file conflicts", "PASS",
+            f"Exactly one requirements file found "
+            f"({req_files[0].relative_to(repo_path)}), no internal "
+            f"conflicts to check across files.",
+        )
+
+    evidence = [
+        f"{name}: " + "; ".join(
+            f"{version} in {', '.join(files)}"
+            for version, files in versions.items()
+        )
+        for name, versions in conflicts.items()
+    ]
+
+    if conflicts:
+        return CheckResult(
+            "Dependency file conflicts", "FAIL",
+            f"{len(req_files)} requirements file(s) found, and "
+            f"{len(conflicts)} package(s) are pinned to genuinely "
+            f"different exact versions across them. pip will pick one "
+            f"file's version depending on install order -- decide which "
+            f"file is authoritative before building, not after a "
+            f"confusing version-mismatch failure.",
+            evidence=[str(f.relative_to(repo_path)) for f in req_files] + evidence,
+        )
+
+    return CheckResult(
+        "Dependency file conflicts", "WARN",
+        f"{len(req_files)} requirements files found with no conflicting "
+        f"exact pins between them. Still worth confirming which one your "
+        f"adapter's Dockerfile should actually install from -- multiple "
+        f"files existing at all is often a sign of a dev/prod split or "
+        f"partially-abandoned dependency management.",
+        evidence=[str(f.relative_to(repo_path)) for f in req_files],
+    )
+
+
 def check_install_time_reboot(repo_path):
     hits = []
     doc_files = list(repo_path.rglob("*.md")) + list(repo_path.rglob("INSTALL*"))
@@ -286,6 +465,8 @@ def run_all_checks(repo_path, git_url):
         check_bare_host_dind_assumptions(repo_path),
         check_architecture_hardcoding(repo_path),
         check_privileged_or_device_requirements(repo_path),
+        check_python_version_compatibility(repo_path),
+        check_dependency_file_conflicts(repo_path),
         check_install_time_reboot(repo_path),
         check_maintenance_signal(git_url),
     ]
@@ -308,7 +489,14 @@ def render_report(results, candidate_name):
         lines.append("⚠️ **WARN results present — review carefully before proceeding; "
                       "these historically predicted real onboarding friction (see EMBA).**")
     else:
-        lines.append("✅ **No FAIL/WARN results — this candidate looks like a straightforward fit.**")
+        lines.append(
+            "ℹ️ **No known static blockers detected.** This means none of "
+            "this script's pattern checks fired — it does NOT mean the "
+            "candidate is confirmed compatible. Dependency resolution, "
+            "the actual Docker build, and a real run have not been "
+            "attempted. Treat this as 'no red flags from a quick static "
+            "scan', not a green light."
+        )
     lines.append("")
 
     for r in results:
