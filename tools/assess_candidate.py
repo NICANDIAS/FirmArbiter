@@ -767,6 +767,105 @@ def check_native_build_toolchain(repo_path, vendored_roots):
     )
 
 
+def check_known_native_dependency_packages(repo_path, vendored_roots):
+    """
+    Cross-checks requirements.txt files against a small, curated list
+    of PyPI packages well-known for needing system C libraries to build
+    from source -- a real, distinct gap check_native_build_toolchain
+    can't see, since that check only looks at the CANDIDATE's own
+    declared C extensions, not third-party packages it merely depends
+    on.
+
+    Directly motivated by a real result, not a guess: running this
+    file's own dependency-resolution dry-run against Greenhouse's real
+    requirements.txt failed with
+        "Please make sure the libxml2 and libxslt development
+        packages are installed. Building lxml version 4.7.1."
+    -- a genuine build failure that check_native_build_toolchain missed
+    entirely, because lxml is a third-party dependency, not something
+    Greenhouse's own setup.py declares. This check exists so that class
+    of failure is caught BEFORE a build even runs, not just diagnosed
+    after the fact by reading a resolver's error output.
+
+    Deliberately a short, high-confidence list rather than exhaustive:
+    every package here reliably needs source compilation (no
+    consistently available wheel across common Docker base
+    architectures, arm64 in particular -- this project's own dev
+    environment). Left out on purpose: packages like cryptography,
+    Pillow, or numpy, which usually ship prebuilt wheels today and
+    would generate more false-positive noise than real signal.
+    """
+    known_native_packages = {
+        "lxml": ["libxml2-dev", "libxslt1-dev"],
+        "psycopg2": ["libpq-dev"],
+        "mysqlclient": [
+            "default-libmysqlclient-dev", "build-essential", "pkg-config",
+        ],
+        "pygraphviz": ["graphviz", "libgraphviz-dev", "pkg-config"],
+        "python-ldap": ["libldap2-dev", "libsasl2-dev"],
+        "pycurl": ["libcurl4-openssl-dev", "libssl-dev"],
+        "pyaudio": ["portaudio19-dev"],
+        "gdal": ["libgdal-dev"],
+        "pyzmq": ["libzmq3-dev"],
+    }
+    # psycopg2-binary and similar *-binary variants ship prebuilt
+    # wheels specifically to avoid this problem -- must not be
+    # confused with the source-build package they're named after.
+    package_pattern = re.compile(
+        r"^\s*([A-Za-z0-9_.\-]+)", re.MULTILINE,
+    )
+
+    req_files = [
+        f for f in repo_path.rglob("*requirements*.txt")
+        if "node_modules" not in f.parts
+    ]
+
+    evidence = []
+    for f in sorted(req_files):
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        for line in text.splitlines():
+            match = package_pattern.match(line)
+            if not match:
+                continue
+            name = match.group(1).lower()
+            if name.endswith("-binary") or name.endswith("_binary"):
+                continue
+            if name in known_native_packages:
+                apt_packages = ", ".join(known_native_packages[name])
+                evidence.append(
+                    f"{label_evidence(f, repo_path, vendored_roots)}: "
+                    f"{name} -- typically needs `apt-get install "
+                    f"{apt_packages}` to build from source"
+                )
+
+    if not evidence:
+        return CheckResult(
+            "Known native-dependency packages", "PASS",
+            "No requirements.txt entries matched this file's short, "
+            "curated list of packages well-known for needing system C "
+            "libraries to build (lxml, psycopg2, mysqlclient, and "
+            "similar). Doesn't rule out a native-build failure from a "
+            "package not on this list -- see the dependency-resolution "
+            "dry-run check for a real, general-purpose signal instead "
+            "of this curated one.",
+        )
+
+    return CheckResult(
+        "Known native-dependency packages", "WARN",
+        f"Found {len(evidence)} requirements.txt entr(y/ies) matching "
+        f"packages known to need system C libraries to build from "
+        f"source. Confirm your adapter's Dockerfile installs the apt "
+        f"package(s) shown BEFORE pip install runs, or switch to the "
+        f"package's -binary variant if one exists (e.g. "
+        f"psycopg2-binary instead of psycopg2) and that's acceptable "
+        f"for your use case.",
+        evidence=evidence,
+    )
+
+
 def check_bootstrap_scripts(repo_path, vendored_roots):
     """
     Inventories scripts that likely run during installation/setup and
@@ -1011,11 +1110,13 @@ def classify_candidate_profile(repo_path, vendored_roots, results):
 
     bootstrap_check = by_name.get("Bootstrap / install scripts")
     toolchain_check = by_name.get("Native build toolchain")
+    known_native_check = by_name.get("Known native-dependency packages")
     source_build_signal = (
         (bootstrap_check and bootstrap_check.status == "INFO"
          and bootstrap_check.evidence
          and any("no notable patterns" not in e for e in bootstrap_check.evidence))
         or (toolchain_check and toolchain_check.status == "WARN")
+        or (known_native_check and known_native_check.status == "WARN")
     )
     if source_build_signal:
         profiles.append((
@@ -1164,6 +1265,7 @@ def run_all_checks(repo_path, git_url):
         check_dependency_resolution_dry_run(repo_path, vendored_roots),
         check_wildcard_import_risk(repo_path, vendored_roots),
         check_native_build_toolchain(repo_path, vendored_roots),
+        check_known_native_dependency_packages(repo_path, vendored_roots),
         check_external_download_links(repo_path, vendored_roots),
         check_bootstrap_scripts(repo_path, vendored_roots),
         check_install_time_reboot(repo_path),
