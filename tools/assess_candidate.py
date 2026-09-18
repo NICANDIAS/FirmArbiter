@@ -890,6 +890,266 @@ def check_maintenance_signal(git_url):
         )
 
 
+def classify_candidate_profile(repo_path, vendored_roots, results):
+    """
+    Onboarding Reliability Phase 4, stage 2 (profile classification) --
+    NOT a single label. A real candidate is often several of these at
+    once (Greenhouse is both container-orchestrator AND source-build),
+    so this returns every profile tag that applies, each with the
+    specific evidence that triggered it and a pointer to the existing
+    adapter that's the closest worked example -- never a forced
+    single choice, consistent with every other check in this file:
+    diagnose, don't decide for the person reading this.
+
+    Deliberately built on top of the OTHER checks' results rather than
+    re-scanning the repo from scratch -- these signals already exist;
+    this function's only job is interpreting the pattern across them.
+    """
+    by_name = {r.name: r for r in results}
+    profiles = []
+
+    dind_check = by_name.get("Bare-host / Docker-in-Docker assumptions")
+    if dind_check and dind_check.status == "WARN":
+        profiles.append((
+            "container-orchestrator",
+            "Candidate references the Docker socket or invokes the "
+            "docker CLI itself (see the Bare-host/DinD finding above) "
+            "-- it orchestrates its own sibling or nested containers "
+            "rather than running fully self-contained.",
+            "Declare docker-socket (sibling containers via the host's "
+            "real Docker daemon) or nested-containers (an isolated "
+            "DinD sidecar) in adapter.yaml's runtime.requirements, "
+            "depending on whether it needs the host's real daemon or "
+            "just *a* daemon. Worked examples: adapters/fact_extractor "
+            "(docker-socket) and adapters/greenhouse (nested-"
+            "containers).",
+        ))
+
+    multiservice_check = by_name.get("Multi-service architecture")
+    if multiservice_check and multiservice_check.status in ("WARN", "FAIL"):
+        profiles.append((
+            "multi-service",
+            "A docker-compose file was found (see the Multi-service "
+            "finding above) -- the candidate's own documented setup "
+            "expects more than one container.",
+            "The Adapter Contract is one container per adapter. Either "
+            "consolidate the compose services into a single Dockerfile "
+            "(processes started via a supervisor/entrypoint script), or "
+            "identify which one service is actually load-bearing for "
+            "the stages you need and drop the rest.",
+        ))
+
+    classifier_pattern = re.compile(r"Python (\d+)\.(\d+)")
+    old_python_evidence = []
+    python_check = by_name.get("Python version compatibility")
+    if python_check and python_check.status == "WARN":
+        for line in python_check.evidence:
+            versions = classifier_pattern.findall(line)
+            for major, minor in versions:
+                if (int(major), int(minor)) < (3, 10):
+                    old_python_evidence.append(line)
+                    break
+    if old_python_evidence:
+        profiles.append((
+            "legacy-python",
+            "At least one declared Python version constraint targets "
+            "an interpreter older than what the template's default "
+            "base image provides (3.10): "
+            + "; ".join(old_python_evidence),
+            "Pin an explicit older Python in your adapter's Dockerfile "
+            "(e.g. FROM python:3.8-slim, or install a specific version "
+            "via deadsnakes on an Ubuntu base) rather than relying on "
+            "the template's default -- this is exactly the class of "
+            "problem (lxml/urllib3/six under a too-new interpreter) "
+            "that made onboarding Greenhouse take as long as it did.",
+        ))
+
+    own_dockerfiles = [
+        f for f in find_dockerfiles(repo_path)
+        if not any(
+            f.resolve() == root or root in f.resolve().parents
+            for root in vendored_roots
+        )
+    ]
+    generic_base_pattern = re.compile(
+        r"^\s*FROM\s+(ubuntu|debian|alpine|python|centos|fedora|"
+        r"scratch)[:@\s]", re.IGNORECASE,
+    )
+    # FROM lines can carry flags before the actual image reference
+    # (e.g. "FROM --platform=linux/amd64 ubuntu:22.04@sha256:...",
+    # confirmed for real in adapters/firmae/Dockerfile) -- skip any
+    # leading --flag tokens rather than naively capturing the first
+    # \S+ after FROM, which would wrongly capture the flag itself as
+    # if it were the image name.
+    from_line_pattern = re.compile(
+        r"^\s*FROM\s+(?:--\S+\s+)*(\S+)", re.IGNORECASE,
+    )
+    for f in own_dockerfiles:
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        for line in text.splitlines():
+            match = from_line_pattern.match(line)
+            if match and not generic_base_pattern.match(
+                re.sub(r"^\s*FROM\s+(?:--\S+\s+)*", "FROM ", line, flags=re.IGNORECASE)
+            ):
+                profiles.append((
+                    "official-image",
+                    f"{f.relative_to(repo_path)} builds FROM "
+                    f"{match.group(1)!r} -- a specific, branded image "
+                    f"rather than a generic OS base -- suggesting the "
+                    f"maintainers already publish a ready-built image "
+                    f"rather than expecting users to build from source.",
+                    "Extend the upstream image directly in your "
+                    "adapter's own Dockerfile (FROM <their image>) "
+                    "rather than reconstructing its install process "
+                    "from scratch. Worked example: adapters/emba "
+                    "(FROM embeddedanalyzer/emba:2.0.2b).",
+                ))
+                break
+
+    bootstrap_check = by_name.get("Bootstrap / install scripts")
+    toolchain_check = by_name.get("Native build toolchain")
+    source_build_signal = (
+        (bootstrap_check and bootstrap_check.status == "INFO"
+         and bootstrap_check.evidence
+         and any("no notable patterns" not in e for e in bootstrap_check.evidence))
+        or (toolchain_check and toolchain_check.status == "WARN")
+    )
+    if source_build_signal:
+        profiles.append((
+            "source-build",
+            "Real installation work beyond pip/apt was found -- "
+            "bootstrap scripts with real signals (sudo, downloads, "
+            "clones) and/or a native compiler toolchain requirement "
+            "(see the relevant findings above).",
+            "Expect a longer Dockerfile than a simple pip install: OS "
+            "packages, then a build toolchain if flagged, then the "
+            "candidate's own source build. Worked examples: "
+            "adapters/firmae and adapters/firmadyne -- the two "
+            "largest, most involved Dockerfiles in this project, for "
+            "exactly this reason.",
+        ))
+
+    return profiles
+
+
+def check_dependency_resolution_dry_run(repo_path, vendored_roots):
+    """
+    Actually attempts to resolve the candidate's own top-level
+    requirements.txt with pip's real resolver (--dry-run: resolves and
+    reports, installs nothing) -- the one check in this file that goes
+    beyond static text-scanning, per your own explicit ask to move past
+    grep-only checks where feasible without Docker.
+
+    This is NOT the same as check_dependency_file_conflicts, which only
+    catches textually-identical package names pinned to different exact
+    versions across multiple files. A real resolver additionally catches
+    RANGE conflicts (package A wants foo>=2, package B wants foo<2 --
+    no single file disagrees with itself, but nothing satisfies both)
+    that pure text-scanning can never see.
+
+    Only runs against the candidate's own (non-vendored) top-level
+    requirements.txt, if exactly one is unambiguous -- deliberately
+    does not try to guess which of several files is authoritative (see
+    check_dependency_file_conflicts for that situation) or reach into
+    vendored code's own dependencies, which aren't necessarily what
+    your adapter's Dockerfile will actually install.
+
+    Needs real network access to PyPI to mean anything -- pip's
+    resolver has to query available versions. Times out rather than
+    hanging forever on a slow or very large dependency tree; a timeout
+    is reported honestly as inconclusive, not as a failure.
+
+    KNOWN LIMITATION, stated plainly rather than hidden: this was
+    developed and unit-tested for its plumbing (venv creation, timeout
+    handling, error-output parsing) in a sandboxed environment with NO
+    PyPI access, so the actual "does pip's resolver catch a real
+    version conflict" behavior could not be verified end-to-end before
+    shipping. Treat the first few real runs of this check as its real
+    test, and report back if the resolution verdict looks wrong.
+    """
+    own_requirements = [
+        f for f in repo_path.rglob("requirements.txt")
+        if not any(
+            f.resolve() == root or root in f.resolve().parents
+            for root in vendored_roots
+        )
+    ]
+
+    if len(own_requirements) != 1:
+        return CheckResult(
+            "Dependency resolution (real pip resolver)", "INFO",
+            f"Skipped: found {len(own_requirements)} candidate-owned "
+            f"requirements.txt file(s), and this check only runs "
+            f"against exactly one unambiguous file. See 'Dependency "
+            f"file conflicts' above for the multi-file case.",
+        )
+
+    requirements_path = own_requirements[0]
+
+    with tempfile.TemporaryDirectory(prefix="firmarbiter_dryrun_") as tmp:
+        venv_dir = Path(tmp) / "venv"
+        venv_result = subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if venv_result.returncode != 0:
+            return CheckResult(
+                "Dependency resolution (real pip resolver)", "INFO",
+                f"Could not create a venv to test in "
+                f"({venv_result.stderr.strip()[-300:]}) -- skipped, "
+                f"not treated as a finding about the candidate.",
+            )
+
+        pip_path = venv_dir / "bin" / "pip"
+        try:
+            resolve_result = subprocess.run(
+                [
+                    str(pip_path), "install", "--dry-run",
+                    "--ignore-installed",
+                    "-r", str(requirements_path),
+                ],
+                capture_output=True, text=True, timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            return CheckResult(
+                "Dependency resolution (real pip resolver)", "INFO",
+                f"pip's resolver did not finish within 180s against "
+                f"{requirements_path.relative_to(repo_path)} -- a large "
+                f"or slow-to-resolve dependency tree, not necessarily a "
+                f"conflict. Inconclusive, not a failure: worth trying "
+                f"by hand with a longer timeout before concluding "
+                f"anything.",
+            )
+
+        if resolve_result.returncode == 0:
+            return CheckResult(
+                "Dependency resolution (real pip resolver)", "PASS",
+                f"pip's real resolver found a consistent set of "
+                f"versions satisfying "
+                f"{requirements_path.relative_to(repo_path)} (nothing "
+                f"was installed -- --dry-run). This only proves the "
+                f"versions are mutually compatible on THIS machine's "
+                f"platform/Python version, not that they'll all still "
+                f"resolve inside your adapter's actual Dockerfile "
+                f"base image.",
+            )
+
+        error_tail = (resolve_result.stdout + resolve_result.stderr).strip()[-1500:]
+        return CheckResult(
+            "Dependency resolution (real pip resolver)", "FAIL",
+            f"pip's real resolver could NOT find a consistent set of "
+            f"versions for "
+            f"{requirements_path.relative_to(repo_path)}. This is a "
+            f"genuine resolution failure, not a guess -- includes range "
+            f"conflicts that check_dependency_file_conflicts' pure "
+            f"text-scan can't see. Real pip output (tail):",
+            evidence=error_tail.splitlines()[-20:],
+        )
+
+
 def run_all_checks(repo_path, git_url):
     vendored_roots = find_vendored_roots(repo_path)
     return [
@@ -901,6 +1161,7 @@ def run_all_checks(repo_path, git_url):
         check_privileged_or_device_requirements(repo_path, vendored_roots),
         check_python_version_compatibility(repo_path, vendored_roots),
         check_dependency_file_conflicts(repo_path, vendored_roots),
+        check_dependency_resolution_dry_run(repo_path, vendored_roots),
         check_wildcard_import_risk(repo_path, vendored_roots),
         check_native_build_toolchain(repo_path, vendored_roots),
         check_external_download_links(repo_path, vendored_roots),
@@ -910,7 +1171,7 @@ def run_all_checks(repo_path, git_url):
     ]
 
 
-def render_report(results, candidate_name):
+def render_report(results, candidate_name, profiles=None):
     lines = [f"# FIRMARBITER Compatibility Assessment: {candidate_name}", ""]
     status_counts = {"PASS": 0, "WARN": 0, "FAIL": 0, "INFO": 0}
     for r in results:
@@ -937,6 +1198,26 @@ def render_report(results, candidate_name):
         )
     lines.append("")
 
+    if profiles:
+        lines.append("## Suggested onboarding profile(s)")
+        lines.append(
+            "Not mutually exclusive — a real candidate is often more "
+            "than one of these. Each entry names the closest existing "
+            "adapter to start from, not a rule to follow blindly."
+        )
+        lines.append("")
+        for name, justification, suggestion in profiles:
+            lines.append(f"### {name}")
+            lines.append(justification)
+            lines.append(f"**Suggested starting point:** {suggestion}")
+            lines.append("")
+    elif profiles is not None:
+        lines.append(
+            "## Suggested onboarding profile(s)\n\nNo specific profile "
+            "signals detected — this candidate may fit the plain "
+            "adapters/_template/ starting point as-is.\n"
+        )
+
     for r in results:
         icon = {"PASS": "✅", "WARN": "⚠️", "FAIL": "❌", "INFO": "ℹ️"}[r.status]
         lines.append(f"## {icon} {r.name} — {r.status}")
@@ -961,7 +1242,9 @@ def main():
     candidate_name = repo_path.name if not git_url else git_url.rstrip("/").split("/")[-1].replace(".git", "")
 
     results = run_all_checks(repo_path, git_url)
-    report = render_report(results, candidate_name)
+    vendored_roots = find_vendored_roots(repo_path)
+    profiles = classify_candidate_profile(repo_path, vendored_roots, results)
+    report = render_report(results, candidate_name, profiles)
 
     print(report)
 
