@@ -180,58 +180,112 @@ def check_vendored_code(repo_path, vendored_roots):
     )
 
 
-def check_single_container_buildability(repo_path):
+def check_single_container_buildability(repo_path, vendored_roots):
     dockerfiles = find_dockerfiles(repo_path)
-    if len(dockerfiles) == 0:
+
+    def is_own_code(f):
+        resolved = f.resolve()
+        return not any(
+            resolved == root or root in resolved.parents
+            for root in vendored_roots
+        )
+
+    own_dockerfiles = [f for f in dockerfiles if is_own_code(f)]
+    vendored_dockerfiles = [f for f in dockerfiles if not is_own_code(f)]
+
+    if len(own_dockerfiles) == 0:
         return CheckResult(
             "Single-container buildability", "FAIL",
-            "No Dockerfile found anywhere in the repo. Candidate may not be "
-            "containerizable at all, or uses a non-standard build system.",
+            "No Dockerfile found in the candidate's own code (vendored "
+            "code doesn't count -- your adapter won't build from a "
+            "bundled third-party tool's Dockerfile). Candidate may not "
+            "be containerizable at all, or uses a non-standard build "
+            "system.",
         )
-    if len(dockerfiles) == 1:
+    if len(own_dockerfiles) == 1:
+        note = ""
+        if vendored_dockerfiles:
+            note = (
+                f" ({len(vendored_dockerfiles)} more found in vendored "
+                f"code, not counted -- see the Vendored/third-party "
+                f"finding above)"
+            )
         return CheckResult(
             "Single-container buildability", "PASS",
-            f"Exactly one Dockerfile found: {dockerfiles[0].relative_to(repo_path)}",
+            f"Exactly one Dockerfile found in the candidate's own code: "
+            f"{own_dockerfiles[0].relative_to(repo_path)}{note}",
         )
     return CheckResult(
         "Single-container buildability", "WARN",
-        f"{len(dockerfiles)} Dockerfiles found — candidate may build multiple "
-        f"images/services rather than a single self-contained container.",
-        evidence=[str(f.relative_to(repo_path)) for f in dockerfiles],
+        f"{len(own_dockerfiles)} Dockerfiles found in the candidate's "
+        f"OWN code (vendored ones excluded from this count) — candidate "
+        f"may build multiple images/services rather than a single "
+        f"self-contained container.",
+        evidence=[
+            f"{label_evidence(f, repo_path, vendored_roots)}"
+            for f in own_dockerfiles
+        ],
     )
 
 
-def check_multiservice_architecture(repo_path):
+def check_multiservice_architecture(repo_path, vendored_roots):
     compose_files = find_compose_files(repo_path)
-    if not compose_files:
+
+    def is_own_code(f):
+        resolved = f.resolve()
+        return not any(
+            resolved == root or root in resolved.parents
+            for root in vendored_roots
+        )
+
+    own_compose_files = [f for f in compose_files if is_own_code(f)]
+
+    if not own_compose_files:
+        note = ""
+        vendored_compose = [f for f in compose_files if not is_own_code(f)]
+        if vendored_compose:
+            note = (
+                f" ({len(vendored_compose)} found in vendored code, not "
+                f"counted -- see the Vendored/third-party finding above)"
+            )
         return CheckResult(
             "Multi-service architecture", "PASS",
-            "No docker-compose file found — candidate likely runs as a single container.",
+            f"No docker-compose file found in the candidate's own code"
+            f"{note} — candidate likely runs as a single container.",
         )
     max_services = 0
     evidence = []
-    for cf in compose_files:
+    for cf in own_compose_files:
         try:
             import yaml
             data = yaml.safe_load(cf.read_text())
             services = data.get("services", {}) if isinstance(data, dict) else {}
             n = len(services)
             max_services = max(max_services, n)
-            evidence.append(f"{cf.relative_to(repo_path)}: {n} service(s) — {list(services.keys())}")
+            evidence.append(
+                f"{label_evidence(cf, repo_path, vendored_roots)}: "
+                f"{n} service(s) — {list(services.keys())}"
+            )
         except Exception as e:
-            evidence.append(f"{cf.relative_to(repo_path)}: could not parse ({e})")
+            evidence.append(
+                f"{label_evidence(cf, repo_path, vendored_roots)}: "
+                f"could not parse ({e})"
+            )
     if max_services <= 1:
         return CheckResult(
             "Multi-service architecture", "PASS",
-            "docker-compose file(s) present but define only a single service.",
+            "docker-compose file(s) present in the candidate's own code "
+            "but define only a single service.",
             evidence=evidence,
         )
     return CheckResult(
         "Multi-service architecture", "WARN",
-        f"docker-compose defines {max_services} services. This suggests a "
-        f"persistent multi-component application (e.g. separate DB/frontend/"
-        f"backend), not a single-shot batch tool — a materially different "
-        f"shape than the Adapter Contract's run-once-per-firmware model.",
+        f"The candidate's own docker-compose defines {max_services} "
+        f"services (vendored compose files excluded from this count). "
+        f"This suggests a persistent multi-component application (e.g. "
+        f"separate DB/frontend/backend), not a single-shot batch tool "
+        f"— a materially different shape than the Adapter Contract's "
+        f"run-once-per-firmware model.",
         evidence=evidence,
     )
 
@@ -1255,8 +1309,8 @@ def run_all_checks(repo_path, git_url):
     vendored_roots = find_vendored_roots(repo_path)
     return [
         check_vendored_code(repo_path, vendored_roots),
-        check_single_container_buildability(repo_path),
-        check_multiservice_architecture(repo_path),
+        check_single_container_buildability(repo_path, vendored_roots),
+        check_multiservice_architecture(repo_path, vendored_roots),
         check_bare_host_dind_assumptions(repo_path, vendored_roots),
         check_architecture_hardcoding(repo_path, vendored_roots),
         check_privileged_or_device_requirements(repo_path, vendored_roots),
