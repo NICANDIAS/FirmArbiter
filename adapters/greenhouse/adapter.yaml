@@ -1,0 +1,57 @@
+schema_version: '1.0'
+adapter:
+  id: greenhouse
+  display_name: "Greenhouse Adapter"
+  description: "Full-system rehosting via FirmAE, invoked through the run.sh script Greenhouse itself provides (its documented, standard entry point) -- run.sh runs full-system rehosting by default, so this adapter reproduces that real, standard behaviour rather than the narrower single-service-only path."
+  version: 0.1.0
+  contract_version: '1.0'
+candidate:
+  name: "Greenhouse"
+  source:
+    type: git
+    repository: "https://github.com/sefcom/greenhouse.git"
+    # Real, resolved HEAD commit at scaffold time — confirm this is still the commit you intend to pin before building.
+    commit: "829cbabbb5de64e251dc7f9c2692b2ca39e29b3b"
+build:
+  context: .
+  dockerfile: Dockerfile
+  platform: linux/amd64
+  base_images:
+  # Real, resolved digest at scaffold time — confirm this is still the base
+  # image you intend to use before building.
+  - "ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214"  # ubuntu:20.04 -- confirmed live, full build succeeded on this exact digest
+runtime:
+  run_as_root: true
+  network: none
+  requirements:
+    - full-privileged
+    - loop-devices
+    - loop-device-partitions
+    - docker-socket
+  # docker-socket used here rather than nested-containers: this
+  # coordinator does not yet support nested-containers end-to-end (see
+  # fact_extractor's known limitation) -- revisit once it does.
+  # loop-device-partitions confirmed live: --privileged alone did not
+  # make dynamically-created loop partition nodes (e.g. /dev/loop16p1)
+  # visible inside the container; a real /dev bind-mount was required.
+capabilities:
+  stages:
+  - unpack
+  - emulate
+  # Add "emulate" and/or "endpoint-discovery" only if your tool
+  # genuinely does them — a static-analysis-only tool (like EMBA) sets
+  # only "unpack" here.
+  firmware_architectures:
+  - arm
+  - arm64
+  - mips
+  - mipsel
+  - x86
+  - x86_64
+  - powerpc
+  # FILL IN real architectures your tool supports, e.g.: arm, arm64,
+  # mips, mipsel, x86, x86_64, powerpc
+  endpoint_protocols: []
+  hints:
+    architecture: optional
+    vendor: optional

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:firmarbiter:schema:adapter-event:1.0",
+  "title": "FIRMARBITER Adapter Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_version",
+    "event",
+    "sequence",
+    "timestamp",
+    "run_id",
+    "adapter_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "contract_version": {
+      "const": "1.0"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "adapter_started",
+        "candidate_started",
+        "extraction_complete",
+        "candidate_boot_reported",
+        "endpoint_reported",
+        "stage_completed",
+        "heartbeat",
+        "shutdown_started",
+        "cleanup_complete",
+        "adapter_stopped",
+        "error"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "adapter_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "running",
+        "waiting_for_shutdown",
+        "shutting_down"
+      ]
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port",
+        "protocol"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp",
+            "http",
+            "https",
+            "ssh",
+            "telnet",
+            "other"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "phase",
+        "message",
+        "recoverable"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "adapter_setup",
+            "candidate_setup",
+            "candidate_execution",
+            "shutdown",
+            "cleanup",
+            "contract"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "recoverable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "terminated"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "unpack",
+        "emulate",
+        "endpoint-discovery"
+      ]
+    },
+    "stage_outcome": {
+      "type": "string",
+      "enum": [
+        "succeeded",
+        "failed",
+        "inconclusive",
+        "not_applicable"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "endpoint_reported"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "endpoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "stage_completed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "stage",
+          "stage_outcome",
+          "message"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "adapter_stopped"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "outcome"
+        ]
+      }
+    }
+  ]
+}
