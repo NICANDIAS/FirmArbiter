@@ -612,6 +612,161 @@ def check_wildcard_import_risk(repo_path, vendored_roots):
     )
 
 
+def check_external_download_links(repo_path, vendored_roots):
+    """
+    Enumerates hardcoded download URLs across bootstrap scripts,
+    Dockerfiles, and requirements files, and surfaces the actual URLs --
+    not just a count.
+
+    Grounded in a real, published finding, not a guess: a USC/ISI study
+    of cybersecurity research artifacts (isi.edu, "Even Verified
+    Cybersecurity Research Artifacts Can Be Hard to Reuse") found
+    "broken links, missing components, specialized resource
+    requirements, inconsistent packaging, incomplete documentation and
+    evolving software dependencies" among the concrete barriers to
+    reusing badged, peer-reviewed artifacts. Link rot is real and
+    common enough in this exact space to be worth surfacing explicitly,
+    not buried as a bare count inside check_bootstrap_scripts.
+
+    This can't check whether a URL is actually still reachable --
+    genuinely verifying that would mean making real network requests
+    during static assessment, out of scope here. What it gives instead
+    is the concrete list worth spot-checking by hand (or scripting a
+    HEAD request against) before trusting an automated Docker build to
+    succeed unattended.
+    """
+    url_pattern = re.compile(r"https?://[^\s\"'\)]+")
+    source_names = {
+        "install.sh", "setup.sh", "bootstrap.sh", "init.sh",
+        "configure", "download.sh", "Dockerfile", "requirements.txt",
+    }
+    candidates = [
+        f for f in repo_path.rglob("*")
+        if f.is_file() and (
+            f.name in source_names or f.name.endswith(".dockerfile")
+        )
+    ]
+
+    evidence = []
+    total_urls = 0
+    for f in sorted(candidates):
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        urls = url_pattern.findall(text)
+        if not urls:
+            continue
+        total_urls += len(urls)
+        label = label_evidence(f, repo_path, vendored_roots)
+        for url in urls[:10]:  # cap per-file to keep the report readable
+            evidence.append(f"{label}: {url}")
+
+    if not total_urls:
+        return CheckResult(
+            "External download links", "PASS",
+            "No hardcoded http(s):// URLs found in install scripts, "
+            "Dockerfiles, or requirements files.",
+        )
+
+    return CheckResult(
+        "External download links", "WARN",
+        f"{total_urls} hardcoded download URL(s) found across install "
+        f"scripts, Dockerfile(s), and requirements files. None of these "
+        f"were checked for reachability -- that needs a real network "
+        f"request, out of scope for a static scan. Spot-check the ones "
+        f"below by hand (a moved GitHub release, a decommissioned "
+        f"mirror, or an expired domain are all real, documented, common "
+        f"reasons research software builds break over time, not "
+        f"hypothetical edge cases) before relying on an unattended "
+        f"Docker build.",
+        evidence=evidence,
+    )
+
+
+def check_native_build_toolchain(repo_path, vendored_roots):
+    """
+    Flags signals that the candidate needs to COMPILE something from
+    source -- Rust, C/C++ via CMake, or a Python C-extension -- which a
+    naive Dockerfile can silently fail to provision even after
+    correctly installing every *runtime* dependency.
+
+    Grounded in a real, published finding: an artifact-evaluation
+    failure-analysis study (arxiv 2602.02235) found environment/
+    dependency issues were the dominant failure category, and named
+    "unavailable toolchains in containerized settings" specifically --
+    distinct from missing Python packages, which
+    check_dependency_file_conflicts and check_python_version_compatibility
+    already cover. A `pip install` that needs to compile a C extension,
+    or a `cargo build`, fails with a real but often confusing error
+    (missing headers, missing linker, missing `cc`) if the base image
+    only has a Python/apt runtime and never installed build-essential,
+    a Rust toolchain, or cmake.
+
+    Static and heuristic, same caveat as every other check here: a
+    match means "go verify your Dockerfile actually installs this",
+    not "this candidate is broken".
+    """
+    signals: dict[str, list[Path]] = {}
+
+    for f in repo_path.rglob("Cargo.toml"):
+        signals.setdefault(
+            "Rust (Cargo.toml found -- needs a Rust toolchain, e.g. "
+            "via rustup, not just apt)",
+            [],
+        ).append(f)
+
+    for f in list(repo_path.rglob("CMakeLists.txt")):
+        signals.setdefault(
+            "CMake/C++ (CMakeLists.txt found -- needs cmake + a C/C++ "
+            "compiler, e.g. build-essential)",
+            [],
+        ).append(f)
+
+    setup_py_ext_pattern = re.compile(r"ext_modules\s*=|Extension\(")
+    for f in repo_path.rglob("setup.py"):
+        try:
+            text = f.read_text(errors="ignore")
+        except Exception:
+            continue
+        if setup_py_ext_pattern.search(text):
+            signals.setdefault(
+                "Python C extension (setup.py declares ext_modules -- "
+                "needs a C compiler and Python dev headers, e.g. "
+                "build-essential + python3-dev)",
+                [],
+            ).append(f)
+
+    if not signals:
+        return CheckResult(
+            "Native build toolchain", "PASS",
+            "No Cargo.toml, CMakeLists.txt, or setup.py-declared C "
+            "extensions found -- no signal that a native compiler "
+            "toolchain is needed beyond what a plain Python/apt "
+            "runtime image provides.",
+        )
+
+    evidence = []
+    for description, files in signals.items():
+        for f in sorted(files):
+            evidence.append(
+                f"{label_evidence(f, repo_path, vendored_roots)}: "
+                f"{description}"
+            )
+
+    return CheckResult(
+        "Native build toolchain", "WARN",
+        f"Found signal(s) that this candidate needs to compile "
+        f"something from source, not just install pre-built packages. "
+        f"Confirm your adapter's Dockerfile explicitly installs the "
+        f"matching toolchain -- a base image with only python3/pip "
+        f"will fail here with an error about a missing compiler or "
+        f"linker, which reads like a dependency problem but is "
+        f"actually a missing system package.",
+        evidence=evidence,
+    )
+
+
 def check_bootstrap_scripts(repo_path, vendored_roots):
     """
     Inventories scripts that likely run during installation/setup and
@@ -747,6 +902,8 @@ def run_all_checks(repo_path, git_url):
         check_python_version_compatibility(repo_path, vendored_roots),
         check_dependency_file_conflicts(repo_path, vendored_roots),
         check_wildcard_import_risk(repo_path, vendored_roots),
+        check_native_build_toolchain(repo_path, vendored_roots),
+        check_external_download_links(repo_path, vendored_roots),
         check_bootstrap_scripts(repo_path, vendored_roots),
         check_install_time_reboot(repo_path),
         check_maintenance_signal(git_url),
