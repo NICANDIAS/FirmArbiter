@@ -1,0 +1,185 @@
+From b77c3da0390f69cb47867dc444cb645dafc85d12 Mon Sep 17 00:00:00 2001
+From: Abdulhakeem Ekun <ekun.abdulhakeem@gmail.com>
+Date: Fri, 18 Sep 2026 13:55:27 +0000
+Subject: [PATCH] Update capability registry after nested-containers +
+ loop-device-partitions merge
+
+Written against the real, merged code on integrate-greenhouse (the
+full firmarbiter_core/docker_backend.py content, and
+tests/fixtures/docker-adapters/mock-nested-containers-adapter/), not
+guessed.
+
+nested-containers: UNSUPPORTED -> EXPERIMENTAL. create_container() no
+longer raises -- confirmed real: creates a per-run private network, a
+DinD sidecar, polls a real API call (not just container state) for
+daemon readiness, wires DOCKER_HOST into the candidate, rolls back
+everything on setup failure, and teardown now explicitly stops/removes
+the sidecar and force-disconnects the network. Still confirmed open,
+checked directly rather than assumed: no real nested child-container
+workload has been exercised end-to-end (the test suite's own mock
+adapter, tests/fixtures/docker-adapters/mock-nested-containers-adapter/,
+only proves 'docker version' reachability against DOCKER_HOST, never a
+real container create inside the nested daemon), and docker:dind is
+still referenced by tag, not a pinned digest -- the merged code's own
+comment says so explicitly. Two things NOT re-verified as part of this
+update, called out as such rather than assumed resolved: whether the
+neutral probe reaches inside the DinD network, and whether resource
+accounting covers the sidecar/children.
+
+loop-device-partitions: new entry, SUPPORTED. Real, working, confirmed
+live during Greenhouse onboarding -- --privileged alone didn't expose
+dynamically-created loop-partition device nodes (e.g. /dev/loop16p1),
+a real /dev bind-mount was required. Deliberately kept separate from
+loop-devices (a much more invasive grant -- the whole host device
+tree, not just loop access).
+
+test_nested_containers_is_not_silently_marked_supported updated to
+check 'not SUPPORTED' rather than a fixed prior value -- it already
+lived through one real transition (UNSUPPORTED -> EXPERIMENTAL) as
+part of this same commit, so pinning it to a specific non-SUPPORTED
+value would just mean editing it again next time reality moves; what
+actually matters to keep guarding is the LAST step, to SUPPORTED,
+which should stay a deliberate, reviewed change.
+
+Verified: 3 of 4 registry tests pass in this sandbox as-is; the 4th
+(test_no_stale_registry_entries) fails here ONLY because this
+sandbox's local schema predates the merge and doesn't have
+loop-device-partitions in its enum yet (confirmed: 0 matches, pure
+sandbox staleness, not a bug in this commit) -- will pass once applied
+on integrate-greenhouse, where the real schema has it.
+---
+ firmarbiter_core/runtime_requirements.py | 76 +++++++++++++++++-------
+ tests/test_runtime_requirements.py       | 19 ++++--
+ 2 files changed, 67 insertions(+), 28 deletions(-)
+
+diff --git a/firmarbiter_core/runtime_requirements.py b/firmarbiter_core/runtime_requirements.py
+index d011bb6..0873ae6 100644
+--- a/firmarbiter_core/runtime_requirements.py
++++ b/firmarbiter_core/runtime_requirements.py
+@@ -11,18 +11,21 @@ Two separate questions were being conflated before this file existed:
+ 
+   2. Which of those does a given BACKEND actually implement, and how
+      maturely?
+-     -> that lived nowhere explicit. A requirement could be a perfectly
+-        valid, schema-accepted thing for an adapter to declare
+-        (nested-containers is exactly this on the Docker backend today)
+-        while having zero backing implementation -- discoverable only by
++     -> that lived nowhere explicit. A requirement can be a perfectly
++        valid, schema-accepted thing for an adapter to declare while
++        having zero backing implementation -- discoverable only by
+         actually trying to run a candidate and hitting
+-        RuntimeRequirementError mid-run.
++        RuntimeRequirementError mid-run. (nested-containers was exactly
++        this for a while; it now has a real implementation, at
++        EXPERIMENTAL maturity -- see its entry below for what's still
++        open. The general problem this file solves outlives any one
++        requirement's current status.)
+ 
+ This file is the second answer, kept as data so it can be checked by a
+-test (see tests/test_contract_consistency.py's
+-test_every_requirement_has_a_backend_status) instead of drifting the way
+-the requirements enum itself already drifted twice (docker-socket,
+-nested-containers) before anyone wrote it down anywhere.
++test (see tests/test_runtime_requirements.py) instead of drifting the
++way the requirements enum itself already drifted more than once
++(docker-socket, nested-containers, loop-device-partitions) before
++anyone wrote it down anywhere.
+ 
+ Status meanings:
+   SUPPORTED     - implemented, used in real onboarded adapters, treat as
+@@ -107,20 +110,47 @@ DOCKER_BACKEND_CAPABILITIES: dict[str, RequirementStatus] = {
+         "Full --privileged. Broadest possible grant.",
+     ),
+     "nested-containers": RequirementStatus(
+-        CapabilityStatus.UNSUPPORTED,
+-        "Declared by the contract, but NOT implemented on the Docker "
+-        "backend on the current mainline -- create_container() raises "
+-        "RuntimeRequirementError immediately. A real, tested DinD-sidecar "
+-        "implementation exists (branch refactor/adapter-contract-v1, "
+-        "commit 34420f3) but is not yet merged, and even once merged "
+-        "has open gaps before it should be called more than "
+-        "EXPERIMENTAL: no real nested child-workload has been tested "
+-        "end-to-end, the neutral reachability probe doesn't yet reach "
+-        "inside the DinD network, per-run resource accounting doesn't "
+-        "cover the sidecar or its children, and the DinD image isn't "
+-        "digest-pinned. Update this entry's status when that branch "
+-        "merges -- to EXPERIMENTAL, not SUPPORTED, until those gaps "
+-        "close too.",
++        CapabilityStatus.EXPERIMENTAL,
++        "Real, working implementation merged (adapters/greenhouse's "
++        "onboarding branch): create_container() no longer raises -- it "
++        "creates a per-run private network, a DinD sidecar, waits for "
++        "the inner daemon to actually be ready (polls a real API call, "
++        "not just container state), wires DOCKER_HOST into the "
++        "candidate, and rolls back everything it created if any setup "
++        "step fails. Teardown also now explicitly stops/removes the "
++        "sidecar and force-disconnects the network, independent of "
++        "whether the candidate's own container was removed. "
++        "Confirmed still open, checked directly against the merged "
++        "code: (1) no real nested child-container workload has been "
++        "exercised end-to-end -- the test suite's own mock adapter "
++        "(tests/fixtures/docker-adapters/mock-nested-containers-"
++        "adapter/) only proves `docker version` reachability against "
++        "DOCKER_HOST, never a `container create` inside the nested "
++        "daemon; (2) the docker:dind image is still referenced by tag, "
++        "not a pinned @sha256 digest -- the merged code's own comment "
++        "says so explicitly, calling this out against the project's "
++        "own reproducibility standard. Not independently re-checked "
++        "since this update: whether the neutral reachability probe "
++        "reaches inside the DinD network, and whether per-run resource "
++        "accounting covers the sidecar or its children -- treat those "
++        "as open until someone actually looks, not as resolved.",
++    ),
++    "loop-device-partitions": RequirementStatus(
++        CapabilityStatus.SUPPORTED,
++        "Bind-mounts the host's real /dev into the container "
++        "(-v /dev:/dev). Deliberately separate from loop-devices: that "
++        "requirement grants /dev/loop-control plus a device-cgroup rule "
++        "without sharing the host's actual /dev directory. But a "
++        "container's /dev is normally its own isolated devtmpfs even "
++        "under --privileged, so partition sub-nodes the kernel creates "
++        "dynamically after losetup -P (e.g. /dev/loop16p1) never become "
++        "visible inside the container under that lighter model -- "
++        "confirmed live during Greenhouse onboarding: its losetup step "
++        "failed with exactly this symptom under --privileged alone, "
++        "and only succeeded once /dev was bind-mounted directly. A "
++        "materially more invasive grant than loop-devices (the whole "
++        "host device tree, not just loop devices), so it's its own "
++        "opt-in requirement.",
+     ),
+ }
+ 
+diff --git a/tests/test_runtime_requirements.py b/tests/test_runtime_requirements.py
+index 374f4fb..f3bea42 100644
+--- a/tests/test_runtime_requirements.py
++++ b/tests/test_runtime_requirements.py
+@@ -86,12 +86,21 @@ class RuntimeRequirementsRegistryTests(unittest.TestCase):
+             )
+ 
+     def test_nested_containers_is_not_silently_marked_supported(self) -> None:
+-        """Specific regression guard for the one requirement that's
+-        actually blocked today. If this ever flips to SUPPORTED, it
+-        should be a deliberate one-line change someone reviews, not
+-        something that happens by accident alongside an unrelated edit."""
++        """Regression guard, updated once already: this requirement went
++        UNSUPPORTED -> EXPERIMENTAL when a real DinD implementation
++        merged (see the registry entry's note for exactly what's still
++        open: no real nested workload tested end-to-end, docker:dind
++        unpinned). What this test protects going forward is the LAST
++        step -> SUPPORTED -- that should be a deliberate, reviewed
++        one-line change once the remaining gaps actually close, not
++        something that happens by accident alongside an unrelated
++        edit. Checking "not SUPPORTED" rather than a fixed value on
++        purpose, so this test doesn't need editing again for the
++        UNSUPPORTED -> EXPERIMENTAL transition it already lived
++        through -- only for the one transition that actually matters
++        to guard against."""
+         entry = DOCKER_BACKEND_CAPABILITIES["nested-containers"]
+-        self.assertEqual(entry.status, CapabilityStatus.UNSUPPORTED)
++        self.assertNotEqual(entry.status, CapabilityStatus.SUPPORTED)
+ 
+ 
+ if __name__ == "__main__":
+-- 
+2.43.0
+
