@@ -86,12 +86,21 @@ class RuntimeRequirementsRegistryTests(unittest.TestCase):
             )
 
     def test_nested_containers_is_not_silently_marked_supported(self) -> None:
-        """Specific regression guard for the one requirement that's
-        actually blocked today. If this ever flips to SUPPORTED, it
-        should be a deliberate one-line change someone reviews, not
-        something that happens by accident alongside an unrelated edit."""
+        """Regression guard, updated once already: this requirement went
+        UNSUPPORTED -> EXPERIMENTAL when a real DinD implementation
+        merged (see the registry entry's note for exactly what's still
+        open: no real nested workload tested end-to-end, docker:dind
+        unpinned). What this test protects going forward is the LAST
+        step -> SUPPORTED -- that should be a deliberate, reviewed
+        one-line change once the remaining gaps actually close, not
+        something that happens by accident alongside an unrelated
+        edit. Checking "not SUPPORTED" rather than a fixed value on
+        purpose, so this test doesn't need editing again for the
+        UNSUPPORTED -> EXPERIMENTAL transition it already lived
+        through -- only for the one transition that actually matters
+        to guard against."""
         entry = DOCKER_BACKEND_CAPABILITIES["nested-containers"]
-        self.assertEqual(entry.status, CapabilityStatus.UNSUPPORTED)
+        self.assertNotEqual(entry.status, CapabilityStatus.SUPPORTED)
 
 
 if __name__ == "__main__":

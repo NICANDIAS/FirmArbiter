@@ -11,18 +11,21 @@ Two separate questions were being conflated before this file existed:
 
   2. Which of those does a given BACKEND actually implement, and how
      maturely?
-     -> that lived nowhere explicit. A requirement could be a perfectly
-        valid, schema-accepted thing for an adapter to declare
-        (nested-containers is exactly this on the Docker backend today)
-        while having zero backing implementation -- discoverable only by
+     -> that lived nowhere explicit. A requirement can be a perfectly
+        valid, schema-accepted thing for an adapter to declare while
+        having zero backing implementation -- discoverable only by
         actually trying to run a candidate and hitting
-        RuntimeRequirementError mid-run.
+        RuntimeRequirementError mid-run. (nested-containers was exactly
+        this for a while; it now has a real implementation, at
+        EXPERIMENTAL maturity -- see its entry below for what's still
+        open. The general problem this file solves outlives any one
+        requirement's current status.)
 
 This file is the second answer, kept as data so it can be checked by a
-test (see tests/test_contract_consistency.py's
-test_every_requirement_has_a_backend_status) instead of drifting the way
-the requirements enum itself already drifted twice (docker-socket,
-nested-containers) before anyone wrote it down anywhere.
+test (see tests/test_runtime_requirements.py) instead of drifting the
+way the requirements enum itself already drifted more than once
+(docker-socket, nested-containers, loop-device-partitions) before
+anyone wrote it down anywhere.
 
 Status meanings:
   SUPPORTED     - implemented, used in real onboarded adapters, treat as
@@ -107,20 +110,47 @@ DOCKER_BACKEND_CAPABILITIES: dict[str, RequirementStatus] = {
         "Full --privileged. Broadest possible grant.",
     ),
     "nested-containers": RequirementStatus(
-        CapabilityStatus.UNSUPPORTED,
-        "Declared by the contract, but NOT implemented on the Docker "
-        "backend on the current mainline -- create_container() raises "
-        "RuntimeRequirementError immediately. A real, tested DinD-sidecar "
-        "implementation exists (branch refactor/adapter-contract-v1, "
-        "commit 34420f3) but is not yet merged, and even once merged "
-        "has open gaps before it should be called more than "
-        "EXPERIMENTAL: no real nested child-workload has been tested "
-        "end-to-end, the neutral reachability probe doesn't yet reach "
-        "inside the DinD network, per-run resource accounting doesn't "
-        "cover the sidecar or its children, and the DinD image isn't "
-        "digest-pinned. Update this entry's status when that branch "
-        "merges -- to EXPERIMENTAL, not SUPPORTED, until those gaps "
-        "close too.",
+        CapabilityStatus.EXPERIMENTAL,
+        "Real, working implementation merged (adapters/greenhouse's "
+        "onboarding branch): create_container() no longer raises -- it "
+        "creates a per-run private network, a DinD sidecar, waits for "
+        "the inner daemon to actually be ready (polls a real API call, "
+        "not just container state), wires DOCKER_HOST into the "
+        "candidate, and rolls back everything it created if any setup "
+        "step fails. Teardown also now explicitly stops/removes the "
+        "sidecar and force-disconnects the network, independent of "
+        "whether the candidate's own container was removed. "
+        "Confirmed still open, checked directly against the merged "
+        "code: (1) no real nested child-container workload has been "
+        "exercised end-to-end -- the test suite's own mock adapter "
+        "(tests/fixtures/docker-adapters/mock-nested-containers-"
+        "adapter/) only proves `docker version` reachability against "
+        "DOCKER_HOST, never a `container create` inside the nested "
+        "daemon; (2) the docker:dind image is still referenced by tag, "
+        "not a pinned @sha256 digest -- the merged code's own comment "
+        "says so explicitly, calling this out against the project's "
+        "own reproducibility standard. Not independently re-checked "
+        "since this update: whether the neutral reachability probe "
+        "reaches inside the DinD network, and whether per-run resource "
+        "accounting covers the sidecar or its children -- treat those "
+        "as open until someone actually looks, not as resolved.",
+    ),
+    "loop-device-partitions": RequirementStatus(
+        CapabilityStatus.SUPPORTED,
+        "Bind-mounts the host's real /dev into the container "
+        "(-v /dev:/dev). Deliberately separate from loop-devices: that "
+        "requirement grants /dev/loop-control plus a device-cgroup rule "
+        "without sharing the host's actual /dev directory. But a "
+        "container's /dev is normally its own isolated devtmpfs even "
+        "under --privileged, so partition sub-nodes the kernel creates "
+        "dynamically after losetup -P (e.g. /dev/loop16p1) never become "
+        "visible inside the container under that lighter model -- "
+        "confirmed live during Greenhouse onboarding: its losetup step "
+        "failed with exactly this symptom under --privileged alone, "
+        "and only succeeded once /dev was bind-mounted directly. A "
+        "materially more invasive grant than loop-devices (the whole "
+        "host device tree, not just loop devices), so it's its own "
+        "opt-in requirement.",
     ),
 }
 
