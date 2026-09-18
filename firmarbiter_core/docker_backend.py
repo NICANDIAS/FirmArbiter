@@ -537,6 +537,30 @@ class DockerBackend:
                         ]
                     )
 
+            elif requirement == "loop-device-partitions":
+                # Bind-mounts the host's real /dev into the container.
+                # Deliberately separate from loop-devices above: that
+                # requirement grants access to loop devices themselves
+                # (/dev/loop-control plus a device-cgroup rule) without
+                # sharing the host's actual /dev directory, specifically
+                # to avoid a fixed device-node snapshot going stale (see
+                # loop-devices' own comment). But a container's /dev is
+                # normally its own isolated devtmpfs even when
+                # --privileged, so partition sub-nodes the kernel
+                # creates dynamically after losetup -P (e.g.
+                # /dev/loop16p1) never become visible inside the
+                # container under that lighter model -- confirmed live:
+                # Greenhouse's losetup step failed with exactly this
+                # symptom under --privileged alone, and only succeeded
+                # once /dev was bind-mounted directly. This is a
+                # materially more invasive grant than loop-devices (the
+                # whole host device tree, not just loop devices), so
+                # it's its own opt-in requirement rather than folded
+                # into loop-devices for every candidate.
+                arguments.extend(
+                    ["-v", "/dev:/dev"]
+                )
+
             elif requirement == "docker-socket":
                 # Sibling-container pattern (DooD): mounts the HOST's
                 # real Docker socket into the candidate container.

@@ -201,6 +201,7 @@
             "enum": [
               "kvm",
               "loop-devices",
+              "loop-device-partitions",
               "device-mapper",
               "tun-tap",
               "net-admin",
