@@ -90,10 +90,26 @@ def _parse_version(version_str: str) -> tuple:
         return tuple(parts) if parts else (0,)
 
 
-def _installed_version(import_name: str) -> tuple | None:
+def _installed_version(import_name: str, pip_name: str | None = None) -> tuple | None:
     """
     Return the installed version of a package as a tuple, or None if
     the package is not installed or has no __version__ attribute.
+
+    Tries three ways, in order: the module's own __version__ attribute,
+    then importlib.metadata under the IMPORT name, then (if given)
+    importlib.metadata under the PIP/distribution name. That third
+    fallback matters for real: a package's import name and its PyPI
+    distribution name aren't always the same string, and
+    importlib.metadata.version() needs the distribution name, not the
+    import name, to find it. python-json-logger is a concrete,
+    confirmed case of exactly this -- its import name is
+    'pythonjsonlogger' (no separator), it sets no __version__, and
+    'pythonjsonlogger' as a distribution name doesn't exist (the real
+    one is 'python-json-logger', a genuinely different string, not
+    something name normalization bridges). Without this fallback, this
+    function always returned None for it, every single run, and the
+    selfcheck reinstalled an already-correctly-installed package every
+    time -- confirmed live, not a hypothetical.
     """
     try:
         module = importlib.import_module(import_name)
@@ -103,12 +119,24 @@ def _installed_version(import_name: str) -> tuple | None:
     except ImportError:
         pass
     # Some packages do not set __version__ — try importlib.metadata
+    # under the import name first...
     try:
         from importlib.metadata import version, PackageNotFoundError
         version_str = version(import_name)
         return _parse_version(version_str)
     except Exception:
         pass
+    # ...and if that fails and the caller gave us the real pip/
+    # distribution name (which can genuinely differ from the import
+    # name -- see this function's docstring), try that too before
+    # giving up and reporting "not installed".
+    if pip_name and pip_name != import_name:
+        try:
+            from importlib.metadata import version, PackageNotFoundError
+            version_str = version(pip_name)
+            return _parse_version(version_str)
+        except Exception:
+            pass
     return None
 
 
@@ -201,7 +229,7 @@ def check_and_update_packages(auto_update: bool = True) -> bool:
     all_ok = True
 
     for import_name, pip_name, min_version in REQUIRED_PACKAGES:
-        installed = _installed_version(import_name)
+        installed = _installed_version(import_name, pip_name)
 
         if installed is None:
             # Package is not installed at all
