@@ -1038,7 +1038,10 @@ class DockerBackend:
         # project's own reproducibility standard (Section III.M) — pin
         # this before treating nested-containers as fully verified, not
         # just functionally working.
-        image_reference = "docker:dind"
+        image_reference = (
+            "docker:dind@sha256:"
+            "3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0"
+        )
 
         run_hash = hashlib.sha256(
             run_id.encode("utf-8")
