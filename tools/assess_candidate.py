@@ -430,7 +430,7 @@ def check_privileged_or_device_requirements(repo_path, vendored_roots):
     compose_files = find_compose_files(repo_path)
     for cf in compose_files:
         text = cf.read_text(errors="ignore")
-        if "privileged" in text or "/dev" in text or "devices:" in text:
+        if "privileged" in text or re.search(r"/dev(/|\b)", text) or "devices:" in text:
             hits.append(f"{label_evidence(cf, repo_path, vendored_roots)}: references privileged/device access")
     for f in find_dockerfiles(repo_path):
         text = f.read_text(errors="ignore")
