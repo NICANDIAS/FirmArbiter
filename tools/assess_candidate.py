@@ -235,13 +235,46 @@ def check_single_container_buildability(repo_path, vendored_roots):
     vendored_dockerfiles = [f for f in dockerfiles if not is_own_code(f)]
 
     if len(own_dockerfiles) == 0:
+        # Confirmed real overclaim, not hypothetical: tested against
+        # PENGUIN, a legitimate, actively-maintained, pip-installable
+        # tool with zero Dockerfiles anywhere in its own repo. This was
+        # unconditionally FAIL before -- but EVERY adapter in this
+        # project (adapters/fact_extractor, adapters/firmae, ...) has a
+        # Dockerfile WE wrote, not one the upstream tool shipped. "The
+        # upstream repo has no Dockerfile" is the normal, expected state
+        # for a huge fraction of legitimate pip-installable candidates,
+        # not evidence something's architecturally wrong.
+        #
+        # What WOULD be a real signal: docker-compose files existing
+        # (own or vendored) with no single own-code Dockerfile to match
+        # -- that suggests the maintainers DID intend containerization,
+        # just not in a shape this adapter can reuse directly. Check for
+        # that distinction rather than treating "no Dockerfile" as
+        # uniformly bad.
+        compose_files = find_compose_files(repo_path)
+        if compose_files:
+            return CheckResult(
+                "Single-container buildability", "WARN",
+                f"No Dockerfile found in the candidate's own code, but "
+                f"{len(compose_files)} docker-compose file(s) exist -- "
+                f"the maintainers likely DID intend containerization, "
+                f"just not in a single-Dockerfile shape this adapter "
+                f"can extend directly. Worth reading those compose "
+                f"files before assuming a plain pip install covers "
+                f"everything.",
+                evidence=[str(f.relative_to(repo_path)) for f in compose_files],
+            )
         return CheckResult(
-            "Single-container buildability", "FAIL",
-            "No Dockerfile found in the candidate's own code (vendored "
-            "code doesn't count -- your adapter won't build from a "
-            "bundled third-party tool's Dockerfile). Candidate may not "
-            "be containerizable at all, or uses a non-standard build "
-            "system.",
+            "Single-container buildability", "INFO",
+            "No Dockerfile found anywhere in the candidate's repo, and "
+            "no docker-compose signal either -- consistent with a "
+            "normal, plain pip-installable tool that was never meant "
+            "to ship its own container definition. Not evidence the "
+            "candidate can't be containerized: you'll write your "
+            "adapter's own Dockerfile from scratch regardless (see "
+            "adapters/fact_extractor for a lean worked example of "
+            "exactly this shape), the same as most candidates here "
+            "already required.",
         )
     if len(own_dockerfiles) == 1:
         note = ""
