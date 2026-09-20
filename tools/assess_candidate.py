@@ -66,7 +66,7 @@ def find_compose_files(repo_path):
     return found
 
 
-def find_vendored_roots(repo_path):
+def find_vendored_roots(repo_path, candidate_name=None):
     """
     Finds subdirectories that look like an entire OTHER project vendored
     into this repo, rather than the candidate's own code.
@@ -92,14 +92,34 @@ def find_vendored_roots(repo_path):
          history included.
       3. A subdirectory (not the repo root itself) containing its own
          setup.py or pyproject.toml -- a strong signal of "this is a
-         separate Python package", since a candidate's own code doesn't
-         typically define a second, independent package one level down
-         from its own.
+         separate Python package".
 
-    This is a heuristic, not certainty -- a monorepo with genuinely
-    first-party sub-packages would also match signal 3. When in doubt
-    it labels rather than silently hides; see how evidence lines use
-    this in the checks below.
+    Signal 3 has two real, CONFIRMED false-positive exceptions, both
+    found assessing PENGUIN (github.com/rehosting/penguin) for real --
+    not hypothetical, both checked against the actual cloned repo:
+
+      (a) a directory literally named "src" -- the standard Python
+          "src layout" convention for a project's OWN top-level code.
+          PENGUIN's src/pyproject.toml declares name="penguin", same
+          author, same project -- signal 3 alone flagged it as
+          vendored purely because of the nested pyproject.toml, which
+          is exactly the false positive this docstring already warned
+          was possible before it was ever observed for real.
+
+      (b) a nested package whose OWN declared name (from its
+          pyproject.toml/setup.py) matches the candidate's name --
+          a much stronger, more general signal than the directory name
+          happening to be "src": if the maintainers named their own
+          sub-package after their own project, it's first-party by
+          definition, regardless of what directory it happens to sit
+          in. Requires candidate_name to be passed in; skipped
+          entirely if it isn't (callers that don't have it yet still
+          get exception (a) and everything else).
+
+    This is a heuristic, not certainty -- signal 3 can still mislabel
+    a monorepo with genuinely first-party sub-packages under other
+    names. When in doubt it labels rather than silently hides; see how
+    evidence lines use this in the checks below.
     """
     vendored = set()
 
@@ -119,10 +139,31 @@ def find_vendored_roots(repo_path):
             continue  # the repo's own .git, not a vendored one
         vendored.add(git_marker.parent)
 
+    declared_name_pattern = re.compile(
+        r'^\s*name\s*=\s*["\']([^"\']+)["\']', re.MULTILINE,
+    )
+
+    def normalize(name):
+        return re.sub(r"[-_.]+", "-", name).strip("-").lower()
+
+    normalized_candidate_name = (
+        normalize(candidate_name) if candidate_name else None
+    )
+
     for marker_name in ("setup.py", "pyproject.toml"):
         for marker in repo_path.rglob(marker_name):
             if marker.parent == repo_path:
                 continue  # the candidate's own top-level package, not vendored
+            if marker.parent.name == "src":
+                continue  # exception (a) -- see docstring
+            if normalized_candidate_name:
+                try:
+                    text = marker.read_text(errors="ignore")
+                except Exception:
+                    text = ""
+                declared = declared_name_pattern.search(text)
+                if declared and normalize(declared.group(1)) == normalized_candidate_name:
+                    continue  # exception (b) -- see docstring
             # Only the OUTERMOST such directory counts as a vendored
             # root -- routersploit_gh/routersploit_ghpatched/setup.py
             # should mark routersploit_gh/, not add a second, redundant
@@ -986,26 +1027,91 @@ def check_bootstrap_scripts(repo_path, vendored_roots):
 
 
 def check_install_time_reboot(repo_path):
-    hits = []
-    doc_files = list(repo_path.rglob("*.md")) + list(repo_path.rglob("INSTALL*"))
+    """
+    Looks for documentation suggesting the HOST machine needs a reboot
+    during installation -- incompatible with a Dockerized, single-build
+    adapter, since a container can't reboot the host it runs on.
+
+    Rewritten after a CONFIRMED false positive, not a hypothetical one:
+    assessing PENGUIN for real, the original bare '\\breboot\\b' match
+    (any doc file, any context, always FAIL) fired on
+    docs/schema_doc.md's core.allow_reboot config option -- which
+    describes whether the EMULATED GUEST firmware is allowed to reboot
+    during QEMU emulation, nothing to do with installing PENGUIN on a
+    host at all.
+
+    Now classifies each hit using the surrounding text, not just the
+    bare word:
+      - Guest/emulation context nearby (qemu, emulat*, guest, firmware,
+        virtual machine) -> not counted as a real hit at all. This is
+        what would have correctly skipped PENGUIN's finding.
+      - A real install-reboot phrasing nearby (e.g. "reboot your
+        host/machine/system", "requires a reboot", "must reboot") ->
+        FAIL, same as before.
+      - Neither -- "reboot" appears but in unclear context -> WARN
+        instead of FAIL. Honest about the uncertainty rather than
+        forcing a binary call either way.
+    """
+    guest_context_pattern = re.compile(
+        r"\b(qemu|emulat\w*|guest|firmware|virtual machine|\bvm\b)\b",
+        re.IGNORECASE,
+    )
+    install_context_pattern = re.compile(
+        r"reboot\s+(your|the)\s+(host|machine|system|computer)"
+        r"|requires?\s+a\s+reboot"
+        r"|must\s+reboot"
+        r"|need(?:s|ed)?\s+to\s+reboot"
+        r"|after\s+(a\s+)?reboot"
+        r"|reboot\s+(is\s+)?required"
+        r"|please\s+reboot",
+        re.IGNORECASE,
+    )
+
+    real_hits = []
+    ambiguous_hits = []
+    doc_files = list(set(repo_path.rglob("*.md")) | set(repo_path.rglob("INSTALL*")))
     for f in doc_files:
         try:
-            text = f.read_text(errors="ignore").lower()
+            text = f.read_text(errors="ignore")
         except Exception:
             continue
-        if re.search(r"\breboot\b", text):
-            hits.append(f"{f.relative_to(repo_path)}: mentions 'reboot'")
-    if not hits:
+        for match in re.finditer(r"\breboot\b", text, re.IGNORECASE):
+            # Look at a window of text around the match, not the whole
+            # file -- a file can legitimately discuss both guest reboot
+            # behavior AND host install steps in different sections.
+            window = text[max(0, match.start() - 150):match.end() + 150]
+            location = f"{f.relative_to(repo_path)}"
+            if guest_context_pattern.search(window):
+                continue  # guest/emulation context -- not a real hit
+            if install_context_pattern.search(window):
+                real_hits.append(f"{location}: {window.strip()[:150]!r}")
+            else:
+                ambiguous_hits.append(f"{location}: {window.strip()[:150]!r}")
+
+    if not real_hits and not ambiguous_hits:
         return CheckResult(
             "Install-time reboot requirement", "PASS",
-            "No documentation references a required reboot during installation.",
+            "No documentation references a required HOST reboot during "
+            "installation (mentions of 'reboot' in guest/emulation "
+            "context, e.g. a QEMU config option, are excluded -- see "
+            "this check's docstring for why).",
+        )
+    if real_hits:
+        return CheckResult(
+            "Install-time reboot requirement", "FAIL",
+            f"Found {len(real_hits)} doc reference(s) to a required HOST "
+            f"reboot during install. This is incompatible with a "
+            f"Dockerized, single-build adapter — the tool likely "
+            f"expects bare-metal host installation.",
+            evidence=real_hits,
         )
     return CheckResult(
-        "Install-time reboot requirement", "FAIL",
-        f"Found {len(hits)} doc file(s) mentioning a required reboot during "
-        f"install. This is incompatible with a Dockerized, single-build "
-        f"adapter — the tool likely expects bare-metal host installation.",
-        evidence=hits,
+        "Install-time reboot requirement", "WARN",
+        f"Found {len(ambiguous_hits)} mention(s) of 'reboot' that are "
+        f"neither clearly about guest/emulation behavior nor clearly "
+        f"phrased as a host-install requirement. Worth a quick manual "
+        f"read of the context below rather than assuming either way.",
+        evidence=ambiguous_hits,
     )
 
 
@@ -1305,8 +1411,8 @@ def check_dependency_resolution_dry_run(repo_path, vendored_roots):
         )
 
 
-def run_all_checks(repo_path, git_url):
-    vendored_roots = find_vendored_roots(repo_path)
+def run_all_checks(repo_path, git_url, candidate_name=None):
+    vendored_roots = find_vendored_roots(repo_path, candidate_name)
     return [
         check_vendored_code(repo_path, vendored_roots),
         check_single_container_buildability(repo_path, vendored_roots),
@@ -1397,8 +1503,8 @@ def main():
     repo_path, git_url = clone_if_url(args.target)
     candidate_name = repo_path.name if not git_url else git_url.rstrip("/").split("/")[-1].replace(".git", "")
 
-    results = run_all_checks(repo_path, git_url)
-    vendored_roots = find_vendored_roots(repo_path)
+    results = run_all_checks(repo_path, git_url, candidate_name)
+    vendored_roots = find_vendored_roots(repo_path, candidate_name)
     profiles = classify_candidate_profile(repo_path, vendored_roots, results)
     report = render_report(results, candidate_name, profiles)
 
