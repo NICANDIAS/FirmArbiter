@@ -185,6 +185,7 @@ def render_dockerfile(facts: DiagnosticFacts, candidate_name: str) -> str:
         f"FROM ubuntu:22.04 AS base",
         f"RUN apt-get update && apt-get install -y --no-install-recommends \\",
         f"    python3 python3-pip python3-venv git ca-certificates curl \\",
+        f"    wget sudo \\",
         f" && rm -rf /var/lib/apt/lists/*",
         f"",
     ]
