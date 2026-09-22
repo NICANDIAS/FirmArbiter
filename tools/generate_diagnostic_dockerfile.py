@@ -50,6 +50,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -257,12 +258,25 @@ def render_dockerfile(facts: DiagnosticFacts, candidate_name: str) -> str:
                 f'RUN echo "--- before bootstrap ---" && find /candidate '
                 f'-maxdepth 2 > /tmp/before.txt'
             )
-            # Real relative path (from WORKDIR /candidate, which matches
-            # the repo root exactly since COPY . /candidate above copied
-            # everything) -- NOT just the script's bare filename, which
-            # would break for anything not sitting at the repo root.
+            # cd into the script's OWN directory before running it, then
+            # run it by its bare filename -- NOT just `bash <relpath>`
+            # from WORKDIR /candidate. Confirmed real, not hypothetical:
+            # a live build against raw Greenhouse ran
+            # routersploit_gh/scripts/setup.sh from /candidate and it
+            # failed on "realpath: /candidate/../routersploit_ghpatched/
+            # routersploit_ghpatched: No such file or directory" --
+            # working backward, that ../routersploit_ghpatched only
+            # makes sense if the script's own CWD is its own directory
+            # (routersploit_gh/scripts/), which resolves to the real,
+            # confirmed vendored dir routersploit_gh/routersploit_ghpatched.
+            # The script was correct; running everything flat from the
+            # repo root was the generator's bug. `cd .` is harmless when
+            # a script already sits at the repo root, so no special-
+            # casing needed for that case.
+            script_dir = posixpath.dirname(script_relpath) or "."
+            script_name = posixpath.basename(script_relpath)
             lines.append(
-                f"RUN bash {script_relpath} || "
+                f"RUN cd {script_dir} && bash {script_name} || "
                 f"(echo 'BOOTSTRAP SCRIPT FAILED: {script_relpath}' && exit 1)"
             )
             lines.append(
