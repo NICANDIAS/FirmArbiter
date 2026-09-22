@@ -25,3 +25,11 @@ python-json-logger>=2.0.4
 
 # Package version introspection (used by self-check)
 packaging>=21.0
+
+# YAML parsing for adapter.yaml manifests (firmarbiter_core/adapter_registry.py
+# imports this directly -- a hard, load-bearing dependency, not optional.
+# Confirmed genuinely missing from this file on 2026-09-20: a fresh
+# ./python tools/manual_test_nested_containers.py run failed with
+# ModuleNotFoundError: No module named 'yaml' immediately after a clean
+# setup.sh run claimed "Installing Python dependencies... Done.")
+pyyaml>=6.0
