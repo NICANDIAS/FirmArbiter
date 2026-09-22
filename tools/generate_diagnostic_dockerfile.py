@@ -58,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from assess_candidate import (  # noqa: E402
     find_vendored_roots,
     find_dockerfiles,
+    is_ci_config_script,
 )
 
 TEMPLATE_DEFAULT_PYTHON = "3.10"  # matches adapters/_template/Dockerfile's base
@@ -119,6 +120,7 @@ def gather_facts(repo_path: Path) -> DiagnosticFacts:
         for f in repo_path.rglob("*")
         if f.is_file() and f.name in BOOTSTRAP_SCRIPT_NAMES
         and is_own_code(f, vendored_roots)
+        and not is_ci_config_script(f)
     )
 
     if any(

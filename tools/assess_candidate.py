@@ -54,6 +54,26 @@ def clone_if_url(target):
         return p, None
 
 
+# CI-config directories -- a script named install.sh/setup.sh/etc.
+# sitting inside one of these is a CI PIPELINE step (e.g. Travis's own
+# "am I in CI" environment check before installing test dependencies),
+# not a real installation step for a human or a Dockerfile to follow.
+# Confirmed real, not hypothetical: tools/generate_diagnostic_dockerfile.py's
+# first real bootstrap-stage build against raw Greenhouse tried to run
+# routersploit_gh/.travis/install.sh and failed on "python: command not
+# found" -- a Travis-CI-only assumption having nothing to do with
+# actually installing the (vendored) RouterSploit tool, let alone
+# Greenhouse itself.
+CI_CONFIG_DIR_NAMES = {
+    ".travis", ".github", ".circleci", ".gitlab", ".azure-pipelines",
+    ".buildkite", ".drone",
+}
+
+
+def is_ci_config_script(path):
+    return bool(set(path.parts) & CI_CONFIG_DIR_NAMES)
+
+
 def find_dockerfiles(repo_path):
     return list(repo_path.rglob("Dockerfile")) + list(repo_path.rglob("*.dockerfile"))
 
@@ -1014,6 +1034,7 @@ def check_bootstrap_scripts(repo_path, vendored_roots):
     scripts = [
         f for f in repo_path.rglob("*")
         if f.is_file() and f.name in script_names
+        and not is_ci_config_script(f)
     ]
 
     if not scripts:
