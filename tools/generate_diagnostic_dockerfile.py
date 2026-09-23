@@ -183,10 +183,17 @@ def render_dockerfile(facts: DiagnosticFacts, candidate_name: str) -> str:
         f"# problem is -- no need to read through an entire build log.",
         f"",
         f"FROM ubuntu:22.04 AS base",
+        f"# Deliberately NOT cleaning up /var/lib/apt/lists/* -- this is a",
+        f"# DIAGNOSTIC image, not a production one, and a real bootstrap",
+        f"# script commonly runs its own `apt-get install` later (confirmed",
+        f"# real: FIRMADYNE's setup.sh does exactly this). Cleaning the",
+        f"# package list here, the normal production-image size-saving habit,",
+        f"# starves every later apt-get in this build with 'Unable to locate",
+        f"# package' unless it re-runs `apt-get update` itself first, which",
+        f"# most real install scripts don't expect to have to do.",
         f"RUN apt-get update && apt-get install -y --no-install-recommends \\",
         f"    python3 python3-pip python3-venv git ca-certificates curl \\",
-        f"    wget sudo \\",
-        f" && rm -rf /var/lib/apt/lists/*",
+        f"    wget sudo",
         f"",
     ]
 
@@ -201,8 +208,7 @@ def render_dockerfile(facts: DiagnosticFacts, candidate_name: str) -> str:
         pkg_list = " \\\n    ".join(sorted(set(toolchain_packages)))
         lines.append(
             "RUN apt-get update && apt-get install -y --no-install-recommends \\\n"
-            f"    {pkg_list} \\\n"
-            " && rm -rf /var/lib/apt/lists/*"
+            f"    {pkg_list}"
         )
     else:
         lines.append("# No native toolchain or system C library signals detected.")
