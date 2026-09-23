@@ -33,6 +33,7 @@ class UnpackObservation:
     tree_sha256: str | None
     inventory_complete: bool
     errors: tuple[str, ...]
+    content_read_errors: tuple[str, ...]
     reason: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -41,6 +42,9 @@ class UnpackObservation:
             self.anchor_groups_detected
         )
         document["errors"] = list(self.errors)
+        document["content_read_errors"] = list(
+            self.content_read_errors
+        )
         return document
 
 
@@ -220,6 +224,7 @@ def validate_unpack_export(
             tree_sha256=None,
             inventory_complete=False,
             errors=(),
+            content_read_errors=(),
             reason=(
                 "The experiment did not request the unpack stage"
             ),
@@ -244,6 +249,7 @@ def validate_unpack_export(
             tree_sha256=None,
             inventory_complete=True,
             errors=(),
+            content_read_errors=(),
             reason=(
                 "Unpack was requested, but the adapter exported no "
                 "root filesystem"
@@ -269,6 +275,7 @@ def validate_unpack_export(
             tree_sha256=None,
             inventory_complete=True,
             errors=(),
+            content_read_errors=(),
             reason=(
                 "The adapter unpack export exists but is not a directory"
             ),
@@ -277,6 +284,7 @@ def validate_unpack_export(
     inventory: list[_InventoryEntry] = []
     discovered_paths: set[str] = set()
     errors: list[str] = []
+    content_read_errors: list[str] = []
 
     regular_files = 0
     directories = 0
@@ -381,9 +389,40 @@ def validate_unpack_export(
                         )
 
                     except OSError as exc:
-                        errors.append(
+                        # This is a DIFFERENT, weaker kind of gap than
+                        # not knowing an entry's type at all (the
+                        # stat() failure branch above, which still
+                        # goes to `errors` and still forces
+                        # inconclusive). Here, stat() already told us
+                        # definitively that this IS a regular file,
+                        # with a real, known size (metadata.st_size,
+                        # available without opening it) -- we just
+                        # can't read its BYTES, typically a real,
+                        # ordinary permission restriction (confirmed
+                        # live: Greenhouse's exported dev/null,
+                        # dev/random, dev/urandom placeholders are
+                        # legitimate 0600 root-owned regular files,
+                        # unreadable by a non-root validator for a
+                        # completely mundane reason having nothing to
+                        # do with whether the export itself is real).
+                        # Still counted, still structurally complete;
+                        # only its content-derived fields (hash,
+                        # ELF/shebang detection, byte total) are
+                        # necessarily left unknown.
+                        content_read_errors.append(
                             f"{relative_path}: "
                             f"{type(exc).__name__}: {exc}"
+                        )
+
+                        inventory.append(
+                            _InventoryEntry(
+                                relative_path=relative_path,
+                                entry_type="regular_file",
+                                mode=permission_mode,
+                                size_bytes=metadata.st_size,
+                                content_sha256=None,
+                                symlink_target=None,
+                            )
                         )
 
                 elif stat.S_ISLNK(metadata.st_mode):
@@ -444,6 +483,7 @@ def validate_unpack_export(
             errors=(
                 f"{type(exc).__name__}: {exc}",
             ),
+            content_read_errors=tuple(content_read_errors),
             reason=(
                 "FIRMARBITER encountered an unexpected error while "
                 "inventorying the unpack export"
@@ -516,6 +556,22 @@ def validate_unpack_export(
             + ", ".join(failed_conditions)
         )
 
+    if content_read_errors:
+        # Transparency, not a verdict change: whatever status was just
+        # determined above already stands on its own (content-read
+        # failures never block a "true" or contribute to
+        # "inconclusive" -- see the comment where they're collected,
+        # in the regular-file branch above, for why). This just makes
+        # sure a reader of the JSON output can SEE that some file
+        # content went unverified, rather than that fact being
+        # silently absorbed into a clean-looking result.
+        reason = (
+            reason
+            + f" ({len(content_read_errors)} file(s) had their type "
+            "and size confirmed but their content could not be read "
+            "-- see content_read_errors)"
+        )
+
     return UnpackObservation(
         metric="unpack_success",
         status=status,
@@ -534,6 +590,7 @@ def validate_unpack_export(
         tree_sha256=tree_hash,
         inventory_complete=inventory_complete,
         errors=tuple(errors),
+        content_read_errors=tuple(content_read_errors),
         reason=reason,
     )
 

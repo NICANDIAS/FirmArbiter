@@ -3,7 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from firmarbiter_core.probes import unpack_validation
 from firmarbiter_core.probes.unpack_validation import (
     validate_unpack_export,
     write_unpack_evidence,
@@ -187,6 +189,76 @@ class UnpackValidationTests(unittest.TestCase):
             self.assertEqual(
                 result.status,
                 "false",
+            )
+
+    def test_unreadable_regular_file_is_not_inconclusive(
+        self,
+    ) -> None:
+        # Confirmed real, not hypothetical: Greenhouse's exported
+        # dev/null, dev/random, dev/urandom were legitimate 0600
+        # root-owned regular-file placeholders (real device nodes
+        # can't be created without root during export) -- readable by
+        # stat(), unreadable by open() as a non-root validator. An
+        # otherwise-genuine, richly-populated rootfs export (1524
+        # real entries in the actual case) was being dragged all the
+        # way down to "inconclusive" by exactly this, which is a much
+        # weaker gap than not knowing an entry's type at all.
+        with tempfile.TemporaryDirectory() as temporary:
+            contract_root = Path(temporary)
+
+            rootfs = create_valid_rootfs(contract_root)
+
+            unreadable = rootfs / "dev"
+            unreadable.mkdir()
+            device_placeholder = unreadable / "null"
+            device_placeholder.write_bytes(b"")
+
+            real_read = unpack_validation._read_regular_file
+
+            def fake_read(path: Path):
+                if path.name == "null":
+                    raise PermissionError(
+                        13, "Permission denied", str(path)
+                    )
+                return real_read(path)
+
+            with mock.patch.object(
+                unpack_validation,
+                "_read_regular_file",
+                side_effect=fake_read,
+            ):
+                result = validate_unpack_export(
+                    contract_root=contract_root,
+                    requested=True,
+                )
+
+            self.assertEqual(
+                result.status,
+                "true",
+            )
+
+            self.assertTrue(
+                result.inventory_complete
+            )
+
+            self.assertEqual(
+                result.errors,
+                (),
+            )
+
+            self.assertEqual(
+                len(result.content_read_errors),
+                1,
+            )
+
+            self.assertIn(
+                "dev/null",
+                result.content_read_errors[0],
+            )
+
+            self.assertIn(
+                "content_read_errors",
+                result.reason,
             )
 
 
