@@ -829,14 +829,14 @@ Examples:
     parser.add_argument(
         "--stages",
         type=parse_stages,
-        default=(
-            "unpack",
-            "emulate",
-            "endpoint-discovery",
-        ),
+        default=None,
         help=(
-            "Comma-separated stages (default: "
-            "unpack,emulate,endpoint-discovery)"
+            "Comma-separated stages. If omitted, each candidate "
+            "runs its own full declared stage list and is never "
+            "skipped for lacking a stage nobody asked for. If given "
+            "explicitly, each candidate runs only the overlap with "
+            "its own declared stages, and is skipped with a visible "
+            "reason if there is no overlap at all."
         ),
     )
     parser.add_argument(
@@ -1421,10 +1421,15 @@ def main() -> int:
         cases = scan_firmware(args.firmware)
         results_root = Path(args.results_root).expanduser().resolve()
 
+        stages_were_specified = args.stages is not None
         policy = RunPolicy(
             experiment_id=experiment_id,
             attempt=args.attempt,
-            requested_stages=tuple(args.stages),
+            requested_stages=(
+                tuple(args.stages)
+                if stages_were_specified
+                else ("unpack", "emulate", "endpoint-discovery")
+            ),
             timeout_seconds=args.timeout,
             heartbeat_interval_seconds=(
                 args.heartbeat_interval
@@ -1471,10 +1476,17 @@ def main() -> int:
     )
     print(f"[FIRMARBITER] Total runs      : {total_runs}")
     print(f"[FIRMARBITER] Attempt         : {args.attempt}")
-    print(
-        "[FIRMARBITER] Stages          : "
-        + ", ".join(policy.requested_stages)
-    )
+    if stages_were_specified:
+        print(
+            "[FIRMARBITER] Stages          : "
+            + ", ".join(policy.requested_stages)
+        )
+    else:
+        print(
+            "[FIRMARBITER] Stages          : (not specified -- "
+            "each candidate will run its own full declared stage "
+            "list)"
+        )
     print(f"[FIRMARBITER] Timeout/run     : {args.timeout}s")
     print(f"[FIRMARBITER] Boot wait       : {args.boot_wait:.0f}s")
     print(f"[FIRMARBITER] Results root    : {results_root}")
@@ -1534,7 +1546,32 @@ def main() -> int:
         print("\n[FIRMARBITER] Mode: DRY RUN\n")
 
         for case in cases:
-            for adapter_id in selected_adapters:
+            for adapter_id, adapter in selected_adapters.items():
+                if not stages_were_specified:
+                    dry_run_stages = tuple(
+                        adapter.manifest["capabilities"]["stages"]
+                    )
+                else:
+                    declared_stages = set(
+                        adapter.manifest["capabilities"]["stages"]
+                    )
+                    dry_run_stages = tuple(
+                        stage
+                        for stage in policy.requested_stages
+                        if stage in declared_stages
+                    )
+                    if not dry_run_stages:
+                        print(
+                            f"  SKIP {adapter_id} <- "
+                            f"{case['filename']}: no requested "
+                            "stages match its declared "
+                            f"capabilities (requested: "
+                            f"{', '.join(policy.requested_stages)}; "
+                            f"{adapter_id} supports: "
+                            f"{', '.join(sorted(declared_stages))})"
+                        )
+                        continue
+
                 run_directory = expected_run_directory(
                     results_root,
                     experiment_id=experiment_id,
@@ -1544,6 +1581,7 @@ def main() -> int:
                 )
                 print(
                     f"  {adapter_id} <- {case['filename']}\n"
+                    f"    stages:  {', '.join(dry_run_stages)}\n"
                     f"    case_id: {case['case_id']}\n"
                     f"    result:  {run_directory}"
                 )
@@ -1571,6 +1609,7 @@ def main() -> int:
 
     saved = 0
     skipped = 0
+    capability_skipped = 0
     coordinator_errors = 0
     non_completed = 0
     run_index = 0
@@ -1578,6 +1617,89 @@ def main() -> int:
 
     for case in cases:
         for adapter_id, adapter in selected_adapters.items():
+            if not stages_were_specified:
+                # Mode 1: nothing was asked for explicitly, so this
+                # candidate simply runs its own full declared stage
+                # list, in the order it declares them -- there is no
+                # external "ask" to compare against here, so a
+                # candidate can never be skipped in this mode for
+                # lacking a stage nobody actually requested.
+                matched_stages = tuple(
+                    adapter.manifest["capabilities"]["stages"]
+                )
+            else:
+                # Mode 2: an explicit --stages was given, so give
+                # this candidate only the intersection of that
+                # request and its own declared capabilities --
+                # confirmed real need: without this,
+                # docker_backend.py hard-fails the whole run the
+                # moment a candidate is asked to do a stage it never
+                # declared, which meant every batch had to hand-pick
+                # one lowest-common-denominator stage set shared by
+                # every included candidate, rather than letting a
+                # richer candidate do more than a narrower one in the
+                # same run.
+                declared_stages = set(
+                    adapter.manifest["capabilities"]["stages"]
+                )
+                matched_stages = tuple(
+                    stage
+                    for stage in policy.requested_stages
+                    if stage in declared_stages
+                )
+
+                if not matched_stages:
+                    print(
+                        f"[FIRMARBITER] SKIP {adapter_id} / "
+                        f"{case['case_id']}: no requested stages "
+                        "match its declared capabilities "
+                        "(requested: "
+                        f"{', '.join(policy.requested_stages)}; "
+                        f"{adapter_id} supports: "
+                        f"{', '.join(sorted(declared_stages))})"
+                    )
+                    capability_skipped += 1
+                    continue
+
+            if matched_stages == policy.requested_stages:
+                candidate_policy = policy
+            else:
+                candidate_policy = RunPolicy(
+                    experiment_id=policy.experiment_id,
+                    attempt=policy.attempt,
+                    requested_stages=matched_stages,
+                    timeout_seconds=policy.timeout_seconds,
+                    heartbeat_interval_seconds=(
+                        policy.heartbeat_interval_seconds
+                    ),
+                    heartbeat_timeout_seconds=(
+                        policy.heartbeat_timeout_seconds
+                    ),
+                    shutdown_grace_seconds=(
+                        policy.shutdown_grace_seconds
+                    ),
+                    boot_wait_timeout_seconds=(
+                        policy.boot_wait_timeout_seconds
+                    ),
+                    cpu_cores=policy.cpu_cores,
+                    memory_bytes=policy.memory_bytes,
+                    pids_limit=policy.pids_limit,
+                    endpoint_wait_timeout_seconds=(
+                        policy.endpoint_wait_timeout_seconds
+                    ),
+                    stability_sample_count=(
+                        policy.stability_sample_count
+                    ),
+                    stability_interval_seconds=(
+                        policy.stability_interval_seconds
+                    ),
+                    stability_probe_timeout_seconds=(
+                        policy.stability_probe_timeout_seconds
+                    ),
+                    compute_sample_interval_seconds=(
+                        policy.compute_sample_interval_seconds
+                    ),
+                )
             run_directory = expected_run_directory(
                 results_root,
                 experiment_id=experiment_id,
@@ -1629,6 +1751,22 @@ def main() -> int:
                 f"attempt={args.attempt}"
             )
             print("=" * 72)
+
+            if not stages_were_specified:
+                print(
+                    "[FIRMARBITER] Stages (this candidate's full "
+                    "capability): "
+                    f"{', '.join(candidate_policy.requested_stages)}"
+                )
+            elif candidate_policy.requested_stages != (
+                policy.requested_stages
+            ):
+                print(
+                    "[FIRMARBITER] Stages (auto-narrowed for "
+                    f"{adapter_id}): "
+                    f"{', '.join(candidate_policy.requested_stages)}"
+                )
+
             run_start_time = time.monotonic()
 
             try:
@@ -1637,7 +1775,7 @@ def main() -> int:
                     adapter=adapter,
                     firmware_path=case["firmware_path"],
                     case_id=case["case_id"],
-                    policy=policy,
+                    policy=candidate_policy,
                     trusted_content_sha256={
                         value.lower()
                         for value in (
@@ -1738,6 +1876,7 @@ def main() -> int:
     invocation["summary"] = {
         "saved": saved,
         "skipped": skipped,
+        "capability_skipped": capability_skipped,
         "non_completed_results": non_completed,
         "coordinator_errors": coordinator_errors,
     }
@@ -1746,6 +1885,7 @@ def main() -> int:
     print("\n[FIRMARBITER] Batch complete")
     print(f"[FIRMARBITER] Saved results       : {saved}")
     print(f"[FIRMARBITER] Existing skipped    : {skipped}")
+    print(f"[FIRMARBITER] Capability skipped  : {capability_skipped}")
     print(f"[FIRMARBITER] Non-completed runs  : {non_completed}")
     print(f"[FIRMARBITER] Coordinator errors  : {coordinator_errors}")
     print(f"[FIRMARBITER] Invocation manifest : {invocation_path}")
