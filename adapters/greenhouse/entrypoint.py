@@ -7,6 +7,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -615,6 +616,53 @@ def dispatch_candidate(
             ),
         )
         return
+
+    # Export the real rootfs Greenhouse found to where FirmArbiter's
+    # independent unpack validator actually checks -- confirmed real,
+    # not hypothetical: a real corpus-50 run's
+    # unpack-observation.json showed entry_count=0, reason="Unpack
+    # was requested, but the adapter exported no root filesystem",
+    # even though gh.py's own log for that SAME run shows "Found
+    # root dir at .../squashfs-root" and real subsequent analysis of
+    # a real uhttpd binary inside it. The rootfs was real; it was
+    # just never copied anywhere FirmArbiter's validator looks.
+    rootfs_match = re.search(
+        r"^Found root dir at (.+)$", run_sh_log, re.MULTILINE,
+    )
+    if rootfs_match:
+        source_rootfs = Path(rootfs_match.group(1).strip())
+        export_target = log_path.parent / "unpack" / "rootfs"
+        try:
+            if source_rootfs.is_dir():
+                shutil.copytree(
+                    source_rootfs, export_target,
+                    symlinks=True, dirs_exist_ok=True,
+                )
+            else:
+                print(
+                    f"[greenhouse-adapter] WARNING: gh.py reported "
+                    f"'Found root dir at {source_rootfs}' but that "
+                    f"path no longer exists at export time -- "
+                    f"nothing exported, independent unpack "
+                    f"verification will correctly show unpack=false.",
+                    file=sys.stderr,
+                )
+        except Exception as exc:
+            print(
+                f"[greenhouse-adapter] WARNING: failed to export "
+                f"rootfs from {source_rootfs} to {export_target}: "
+                f"{exc!r} -- independent unpack verification will "
+                f"correctly show unpack=false.",
+                file=sys.stderr,
+            )
+    else:
+        print(
+            f"[greenhouse-adapter] WARNING: unpack succeeded per "
+            f"gh.py's log but no 'Found root dir at ...' line was "
+            f"found to parse -- gh.py's log format may have "
+            f"changed. Nothing exported.",
+            file=sys.stderr,
+        )
 
     event_writer.emit(
         "stage_completed",
