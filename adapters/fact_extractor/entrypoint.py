@@ -160,8 +160,40 @@ def run_unpack(request, event_writer):
     # flat copy, not a filesystem reconstruction — see semantic note above.
     rootfs_dir = artifacts_path / "unpack" / "rootfs"
     rootfs_dir.mkdir(parents=True, exist_ok=True)
-    for chunk_file in files_dir.iterdir():
-        shutil.copy(chunk_file, rootfs_dir / chunk_file.name)
+
+    # fact_extractor's output folder holds directories as well as files
+    # (e.g. OpenWrt sysupgrade images produce "sysupgrade-<board>/" and
+    # some images produce "dtb/"). shutil.copy() on a directory raises
+    # IsADirectoryError (Errno 21): this crashed 14 of 44 runs in
+    # corpus-50-v8. Directories are now walked and copied explicitly.
+    # Device nodes, FIFOs and sockets are never read (same hazard the EMBA
+    # adapter documents: reading a /dev/zero-style node never ends and
+    # fills the host disk); they become empty placeholders instead.
+    import os
+    import stat as stat_module
+
+    def _copy_output_entry(src, dst):
+        mode = os.lstat(src).st_mode
+        if (
+            stat_module.S_ISCHR(mode)
+            or stat_module.S_ISBLK(mode)
+            or stat_module.S_ISFIFO(mode)
+            or stat_module.S_ISSOCK(mode)
+        ):
+            dst.touch(exist_ok=True)
+        elif stat_module.S_ISLNK(mode):
+            os.symlink(os.readlink(src), dst)
+        elif stat_module.S_ISDIR(mode):
+            dst.mkdir(parents=True, exist_ok=True)
+            with os.scandir(src) as it:
+                children = sorted(it, key=lambda e: e.name)
+            for child in children:
+                _copy_output_entry(src / child.name, dst / child.name)
+        else:
+            shutil.copy(src, dst)
+
+    for chunk_file in sorted(files_dir.iterdir()):
+        _copy_output_entry(chunk_file, rootfs_dir / chunk_file.name)
 
     if num_unpacked == 0:
         return "failed", "fact_extractor ran but extracted 0 files"
