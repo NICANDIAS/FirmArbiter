@@ -988,6 +988,33 @@ class CandidateRunCoordinator:
                 except LifecycleWatchdogError as exc:
                     endpoint_wait_error = str(exc)
 
+            # FIRMARBITER: wait for static-analysis
+            # Candidates that declare a static-analysis stage (EMBA) must
+            # be allowed to finish it before shutdown is requested.
+            # Without this wait, shutdown fired right after unpack and
+            # cut static-analysis off after about 5 seconds.
+            static_wait_error: str | None = None
+
+            if (
+                readiness_wait_error is None
+                and blocking_stage_event is None
+                and "static-analysis" in requested_stages
+            ):
+                try:
+                    watchdog.wait_for_matching_event(
+                        lambda event: (
+                            event.get("event") == "stage_completed"
+                            and event.get("stage") == "static-analysis"
+                        ) or candidate_stage_blocks_following_work(
+                            event,
+                            {"unpack"},
+                        ),
+                        description="static-analysis completion",
+                        timeout_seconds=float(policy.timeout_seconds),
+                    )
+                except LifecycleWatchdogError as exc:
+                    static_wait_error = str(exc)
+
             handled_sequences: set[int] = set()
 
             for event in watchdog.observed_events:
