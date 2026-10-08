@@ -300,10 +300,13 @@ def expected_run_directory(
     adapter_id: str,
     attempt: int,
 ) -> Path:
-    run_id = (
-        f"{safe_token(experiment_id)}."
-        f"{safe_token(case_id)}."
-        f"{adapter_id}.attempt-{attempt}"
+    from firmarbiter_core.run_identity import build_run_id
+
+    run_id = build_run_id(
+        safe_token(experiment_id),
+        safe_token(case_id),
+        adapter_id,
+        attempt,
     )
     return results_root.resolve() / run_id
 

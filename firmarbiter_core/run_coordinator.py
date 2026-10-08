@@ -449,11 +449,13 @@ class CandidateRunCoordinator:
         )
         safe_case = _safe_token(case_id)
 
-        run_id = (
-            f"{safe_experiment}."
-            f"{safe_case}."
-            f"{adapter.adapter_id}."
-            f"attempt-{policy.attempt}"
+        from firmarbiter_core.run_identity import build_run_id
+
+        run_id = build_run_id(
+            safe_experiment,
+            safe_case,
+            adapter.adapter_id,
+            policy.attempt,
         )
 
         run_directory = (

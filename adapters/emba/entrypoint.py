@@ -127,6 +127,7 @@ def run_unpack(request, event_writer, shutdown=None):
     # guest-console.log gap fixed earlier — undrained subprocess output.
     stdout_log_path = log_dir.parent / "emba_stdout.log"
     stderr_log_path = log_dir.parent / "emba_stderr.log"
+    _EMBA_RUN["proc"] = proc
 
     def _drain(stream, path):
         try:
@@ -165,6 +166,37 @@ def run_unpack(request, event_writer, shutdown=None):
             break  # process finished naturally
         except subprocess.TimeoutExpired:
             elapsed += poll_interval_seconds
+            if _extraction_phase_finished(log_dir):
+                # EMBA's own log says extraction (P50..P99) is done. Export
+                # the rootfs and report "unpack" now; EMBA keeps running and
+                # the remaining modules are the static-analysis stage.
+                found_early, early_count = _export_rootfs(
+                    log_dir, artifacts_path
+                )
+                analysis_follows = (
+                    "static-analysis" in request.run.requested_stages
+                )
+                if not analysis_follows:
+                    _stop_emba()  # nobody will wait for the analysis modules
+                if found_early is None:
+                    return "failed", (
+                        "EMBA's extraction phase finished "
+                        "(P99_prepare_analyzer) but no directory with etc/ + "
+                        "bin/ was found under firmware/binwalk_extracted or "
+                        "firmware/unblob_extracted."
+                    )
+                return "succeeded", (
+                    f"EMBA extraction phase finished after ~{elapsed}s; "
+                    f"extracted rootfs found at "
+                    f"{found_early.relative_to(log_dir)} with {early_count} "
+                    f"files copied to unpack/rootfs/."
+                    + (
+                        " The remaining EMBA modules are reported by the "
+                        "static-analysis stage."
+                        if analysis_follows
+                        else ""
+                    )
+                )
             if shutdown is not None and shutdown.shutdown_requested():
                 was_shutdown_requested = True
                 try:
@@ -190,6 +222,18 @@ def run_unpack(request, event_writer, shutdown=None):
                 )
 
     if was_shutdown_requested:
+        # Stopped before EMBA's extraction phase was reported complete. Still
+        # export any rootfs it extracted, so the independent verification
+        # judges what EMBA actually produced.
+        found_late, late_count = _export_rootfs(log_dir, artifacts_path)
+        if found_late is not None:
+            return "failed", (
+                "EMBA was terminated early because the coordinator requested "
+                "shutdown before the scan completed naturally; a rootfs "
+                f"candidate was nevertheless found at "
+                f"{found_late.relative_to(log_dir)} and {late_count} files "
+                "were copied to unpack/rootfs/."
+            )
         return "failed", (
             "EMBA was terminated early because the coordinator requested "
             "shutdown before the scan completed naturally."
@@ -304,6 +348,204 @@ def run_unpack(request, event_writer, shutdown=None):
     )
 
 
+# ---------------------------------------------------------------------
+# EMBA runs ONE scan, reported here as two stages.
+#
+# Measured in corpus-50-v8: EMBA's extraction phase (P50 binwalk ... P99
+# prepare_analyzer) finishes ~40 s after the scan starts, while the analysis
+# modules that follow can run for hours or stall (S115_usermode_emulator).
+# Judging "unpack" only after the WHOLE scan ended meant that whenever the
+# coordinator's time limit stopped the scan first, the rootfs EMBA had
+# extracted in under a minute was never exported, and the run was recorded
+# as an unpack failure (27 of 44 images had a rootfs on disk).
+#
+# So: "unpack" is reported as soon as EMBA's own log says its extraction
+# phase finished, and the rest of the scan is the "static-analysis" stage.
+# The verdict on the exported tree still comes from FirmArbiter's
+# independent validation, not from this adapter's message.
+# ---------------------------------------------------------------------
+
+_EMBA_RUN = {"proc": None}
+
+
+def _emba_log_text(log_dir):
+    try:
+        return (log_dir / "emba.log").read_text(errors="replace")
+    except OSError:
+        return ""
+
+
+def _extraction_phase_finished(log_dir):
+    return "P99_prepare_analyzer finished" in _emba_log_text(log_dir)
+
+
+def _unfinished_modules(log_dir):
+    """EMBA modules whose 'starting' line has no matching 'finished' line."""
+    import re
+
+    started = []
+    finished = set()
+    for line in _emba_log_text(log_dir).splitlines():
+        m = re.search(r" - ([A-Za-z]\d+_\S+) (starting|finished)\b", line)
+        if not m:
+            continue
+        if m.group(2) == "starting":
+            started.append(m.group(1))
+        else:
+            finished.add(m.group(1))
+    return [name for name in started if name not in finished]
+
+
+def _stop_emba():
+    """Terminate EMBA's whole process group if it is still running."""
+    import os
+    import signal as signal_module
+    import subprocess
+
+    proc = _EMBA_RUN.get("proc")
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal_module.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal_module.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def _export_rootfs(log_dir, artifacts_path):
+    """Find the rootfs EMBA extracted and copy it to unpack/rootfs/.
+
+    Returns (source_directory_or_None, file_count). Same safe-copy rules as
+    the original inline code in run_unpack: device nodes, FIFOs and sockets
+    are never read (reading /dev/zero filled the host disk twice), and
+    permissions are normalised so the non-root verifier can read the tree.
+    """
+    import os
+    import shutil
+    import stat as stat_module
+    from pathlib import Path
+
+    found = None
+    for sub in ("binwalk_extracted", "unblob_extracted"):
+        root = log_dir / "firmware" / sub
+        if not root.exists():
+            continue
+        for candidate in root.rglob("*"):
+            if (
+                candidate.is_dir()
+                and (candidate / "etc").is_dir()
+                and (candidate / "bin").is_dir()
+            ):
+                found = candidate
+                break
+        if found is not None:
+            break
+    if found is None:
+        return None, 0
+
+    rootfs_dir = artifacts_path / "unpack" / "rootfs"
+    if rootfs_dir.exists():
+        shutil.rmtree(rootfs_dir)
+
+    def _safe_copytree(src, dst):
+        dst.mkdir(parents=True, exist_ok=True)
+        for entry in os.scandir(src):
+            src_path = Path(entry.path)
+            dst_path = dst / entry.name
+            try:
+                mode = entry.stat(follow_symlinks=False).st_mode
+            except OSError:
+                continue
+            if (
+                stat_module.S_ISCHR(mode)
+                or stat_module.S_ISBLK(mode)
+                or stat_module.S_ISFIFO(mode)
+                or stat_module.S_ISSOCK(mode)
+            ):
+                dst_path.touch(exist_ok=True)
+                continue
+            if entry.is_symlink():
+                try:
+                    os.symlink(os.readlink(entry.path), dst_path)
+                except OSError:
+                    pass
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                _safe_copytree(src_path, dst_path)
+            else:
+                try:
+                    shutil.copy2(src_path, dst_path)
+                except (OSError, PermissionError):
+                    pass
+
+    _safe_copytree(found, rootfs_dir)
+
+    for root_, dirs, files in os.walk(rootfs_dir):
+        for name in dirs + files:
+            p = Path(root_) / name
+            try:
+                current = p.stat().st_mode
+                p.chmod(current | 0o444 | 0o111 if p.is_dir() else current | 0o444)
+            except OSError:
+                pass
+
+    file_count = sum(1 for p in rootfs_dir.rglob("*") if p.is_file())
+    return found, file_count
+
+
+def run_static_analysis(request, event_writer, shutdown=None):
+    """Second half of the single EMBA scan started by run_unpack: wait for
+    the analysis modules to finish, or for the coordinator to stop the run.
+
+    Succeeds only if EMBA exited 0 on its own. If the coordinator's time
+    limit arrives first, EMBA is terminated and the modules that had started
+    but not finished are named, so stalls (e.g. S115) are on the record.
+    """
+    import subprocess
+    from pathlib import Path
+
+    proc = _EMBA_RUN.get("proc")
+    log_dir = Path(request.paths.artifacts) / "unpack" / "_emba_run"
+    if proc is None:
+        return "failed", (
+            "EMBA was not running: this adapter runs one EMBA scan that the "
+            "unpack stage starts, so static-analysis cannot be requested "
+            "without unpack."
+        )
+
+    while True:
+        try:
+            proc.wait(timeout=5)
+            break
+        except subprocess.TimeoutExpired:
+            if shutdown is not None and shutdown.shutdown_requested():
+                unfinished = _unfinished_modules(log_dir)
+                _stop_emba()
+                return "failed", (
+                    "EMBA's analysis modules had not finished when the "
+                    "coordinator stopped the run, so EMBA was terminated. "
+                    "Modules started but not finished: "
+                    + (", ".join(unfinished) if unfinished else "none recorded")
+                    + "."
+                )
+
+    if proc.returncode == 0:
+        return "succeeded", (
+            "EMBA scan finished on its own (exit code 0); full analysis "
+            f"artifacts are in {log_dir}."
+        )
+    return "failed", (
+        f"EMBA exited with code {proc.returncode} before completing its "
+        f"analysis; artifacts so far are in {log_dir}."
+    )
+
+
 def run_emulate(request, event_writer):
     """default-scan.emba is static-analysis only. EMBA does have dynamic/
     emulation capability (S115_usermode_emulator, and a separate
@@ -337,6 +579,7 @@ def run_endpoint_discovery(request, event_writer):
 
 STAGE_FUNCTIONS = {
     "unpack": run_unpack,
+    "static-analysis": run_static_analysis,
     "emulate": run_emulate,
     "endpoint-discovery": run_endpoint_discovery,
 }
@@ -438,6 +681,7 @@ def main():
         heartbeat.stop()
         # FILL IN (optional): any tool-specific cleanup goes here, e.g.
         # removing loop devices, killing lingering QEMU processes, etc.
+        _stop_emba()  # EMBA may still be running if analysis was not awaited
         event_writer.cleanup_complete(message="Cleanup finished")
         event_writer.adapter_stopped(outcome="completed", message="Adapter exiting normally")
 
