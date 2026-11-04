@@ -191,20 +191,31 @@ class DockerBackend:
             f"{adapter.manifest['adapter']['version']}"
         )
 
-        self._run(
-            [
-                "build",
-                "--pull",
-                "--platform",
-                build["platform"],
-                "--file",
-                str(dockerfile_path),
-                "--tag",
-                image_reference,
-                str(context_path),
-            ],
-            timeout=1800,
-        )
+        # Opt-in: reuse an already-built adapter image instead of
+        # rebuilding (FIRMARBITER_REUSE_IMAGES=1). Default unchanged.
+        import os as _os
+        _reuse = False
+        if _os.environ.get("FIRMARBITER_REUSE_IMAGES") == "1":
+            try:
+                _d = self.inspect_image(image_reference)
+                _reuse = bool(isinstance(_d, dict) and _d.get("Id"))
+            except Exception:
+                _reuse = False
+        if not _reuse:
+            self._run(
+                [
+                    "build",
+                    "--pull",
+                    "--platform",
+                    build["platform"],
+                    "--file",
+                    str(dockerfile_path),
+                    "--tag",
+                    image_reference,
+                    str(context_path),
+                ],
+                timeout=1800,
+            )
 
         image_data = self.inspect_image(image_reference)
 
